@@ -1,21 +1,49 @@
 const fs = require('fs');
-const formidable = require('formidable');
+const path = require('path');
+const express = require('express');
+const cors = require('cors');
+const { formidable } = require('formidable');
 const { OpenAI } = require('openai');
 const admin = require('firebase-admin');
+require('dotenv').config();
+
+if (!process.env.OPENAI_API_KEY) {
+  console.warn('[server] OPENAI_API_KEY is not set. Whisper transcription will fail.');
+}
+
+if (!process.env.CORS_ALLOW_ORIGINS) {
+  console.warn('[server] CORS_ALLOW_ORIGINS not provided. Defaulting to http://localhost:8081');
+}
+
+const app = express();
+const port = process.env.PORT || 3000;
+
+const allowedOrigins = (process.env.CORS_ALLOW_ORIGINS || 'http://localhost:8081')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+app.use(
+  cors({
+    origin: allowedOrigins.includes('*') ? '*' : allowedOrigins,
+    methods: ['POST', 'OPTIONS'],
+    allowedHeaders: ['Content-Type'],
+  }),
+);
 
 let firebaseApp;
 
 const initFirebase = () => {
-  if (firebaseApp) {
-    return firebaseApp;
-  }
+  if (firebaseApp) return firebaseApp;
 
   if (!process.env.FIREBASE_SERVICE_ACCOUNT || !process.env.FIREBASE_DATABASE_URL) {
-    console.warn('Firebase environment variables missing. Skipping database persistence.');
     return null;
   }
 
-  const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+  const serviceAccount =
+    typeof process.env.FIREBASE_SERVICE_ACCOUNT === 'string'
+      ? JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)
+      : process.env.FIREBASE_SERVICE_ACCOUNT;
 
   firebaseApp = admin.apps.length
     ? admin.app()
@@ -79,12 +107,12 @@ Urgency rules:
 };
 
 const persistTicket = async (payload) => {
-  const app = initFirebase();
-  if (!app) {
+  const firebase = initFirebase();
+  if (!firebase) {
     return null;
   }
 
-  const db = app.database();
+  const db = firebase.database();
   const ref = db.ref('tickets').push();
   const ticket = {
     ...payload,
@@ -95,50 +123,49 @@ const persistTicket = async (payload) => {
   return { id: ref.key, ...ticket };
 };
 
-const applyCors = (req, res) => {
-  const origins = process.env.CORS_ALLOW_ORIGINS
-    ? process.env.CORS_ALLOW_ORIGINS.split(',').map((origin) => origin.trim())
-    : ['*'];
-  const requestOrigin = req.headers.origin;
-  const allowOrigin = origins.includes('*')
-    ? '*'
-    : origins.find((origin) => origin === requestOrigin) || origins[0];
+const uploadDir = path.join(__dirname, '..', '.tmp');
+fs.mkdirSync(uploadDir, { recursive: true });
 
-  res.setHeader('Access-Control-Allow-Origin', allowOrigin);
-  res.setHeader('Access-Control-Allow-Methods', 'POST,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-  res.setHeader('Access-Control-Max-Age', '86400');
-};
+const formParser = formidable({
+  multiples: false,
+  maxFileSize: 25 * 1024 * 1024,
+  uploadDir,
+  keepExtensions: true,
+});
 
-const handler = async (req, res) => {
-  applyCors(req, res);
-
-  if (req.method === 'OPTIONS') {
-    res.status(204).end();
-    return;
-  }
-
-  if (req.method !== 'POST') {
-    res.setHeader('Allow', 'POST');
-    res.status(405).json({ error: 'Method not allowed' });
-    return;
-  }
-
-  const form = formidable({
-    multiples: false,
-    maxFileSize: 25 * 1024 * 1024,
-  });
-
-  form.parse(req, async (err, fields, files) => {
+app.post('/api/processInput', (req, res) => {
+  console.log('[server] Incoming /api/processInput request from', req.headers['user-agent']);
+  formParser.parse(req, async (err, fields, files) => {
     if (err) {
       console.error('Upload error:', err);
       res.status(400).json({ error: 'Invalid audio upload' });
       return;
     }
 
-    const audioFile = files.file;
+    const fileEntry = Array.isArray(files.file) ? files.file[0] : files.file;
+    const audioFile = fileEntry || null;
     if (!audioFile) {
       res.status(400).json({ error: 'Audio file is required' });
+      return;
+    }
+
+     console.log('[server] Audio upload received', {
+       filename: audioFile.originalFilename,
+       mimetype: audioFile.mimetype,
+       size: audioFile.size,
+       filepath: audioFile.filepath,
+     });
+
+    const audioFilePath =
+      audioFile.filepath ||
+      audioFile.path ||
+      audioFile._writeStream?.path ||
+      audioFile.file?.filepath ||
+      audioFile.file?.path;
+
+    if (!audioFilePath) {
+      console.error('[server] Uploaded file missing filepath', audioFile);
+      res.status(500).json({ error: 'Uploaded file path is missing' });
       return;
     }
 
@@ -146,12 +173,13 @@ const handler = async (req, res) => {
       const client = openaiClient();
 
       const transcription = await client.audio.transcriptions.create({
-        file: fs.createReadStream(audioFile.filepath),
+        file: fs.createReadStream(audioFilePath),
         model: 'whisper-1',
         response_format: 'text',
       });
 
       const transcript = typeof transcription === 'string' ? transcription : transcription.text;
+      console.log('[server] Whisper transcription complete', { hasTranscript: Boolean(transcript) });
 
       if (!transcript) {
         res.status(200).json({ transcript: '' });
@@ -171,6 +199,10 @@ const handler = async (req, res) => {
           urgency: classification.urgency,
           summary: classification.summary,
         });
+        console.log('[server] Classification complete', classification);
+        if (ticketRecord) {
+          console.log('[server] Ticket persisted', ticketRecord.id);
+        }
       } catch (classificationError) {
         console.warn('Classification or persistence failed:', classificationError.message);
       }
@@ -183,20 +215,35 @@ const handler = async (req, res) => {
           classification?.reply ||
           'Thanks! MoveMate captured your issue and will share updates once a team member picks it up.',
       });
+      console.log('[server] Response sent to client');
     } catch (processingError) {
       console.error('Processing error:', processingError);
       res.status(500).json({
         error: 'Failed to transcribe audio',
         details: processingError.message,
       });
+    } finally {
+      if (audioFile?.filepath) {
+        fs.promises
+          .unlink(audioFile.filepath)
+          .catch(() => undefined);
+      }
     }
   });
-};
+});
 
-module.exports = handler;
-module.exports.config = {
-  api: {
-    bodyParser: false,
-  },
-};
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok' });
+});
+
+app.get('/', (req, res) => {
+  res.json({
+    status: 'ok',
+    message: 'MoveMate voice backend is running. POST audio to /api/processInput.',
+  });
+});
+
+app.listen(port, () => {
+  console.log(`MoveMate server listening on http://localhost:${port}`);
+});
 

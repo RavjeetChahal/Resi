@@ -23,10 +23,6 @@ const DashboardScreen = ({ navigation }) => {
 
   const handleLogout = () => {
     resetRole();
-    navigation.reset({
-      index: 0,
-      routes: [{ name: 'Login' }],
-    });
   };
 
   return (

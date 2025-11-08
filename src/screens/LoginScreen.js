@@ -28,11 +28,6 @@ const LoginScreen = ({ navigation }) => {
 
   const handleSelectRole = (roleKey) => {
     setRole(roleKey);
-    const destination = roleKey === 'resident' ? 'Home' : 'Dashboard';
-    navigation.reset({
-      index: 0,
-      routes: [{ name: destination }],
-    });
   };
 
   return (

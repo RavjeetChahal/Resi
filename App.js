@@ -24,17 +24,32 @@ const navigationTheme = {
 
 const AppNavigator = () => {
   const { role } = useAuth();
+  const navigatorKey = role ?? 'guest';
 
   return (
     <Stack.Navigator
+      key={navigatorKey}
       screenOptions={{
         headerShown: false,
         animation: 'slide_from_right',
       }}
+      initialRouteName={
+        !role ? 'Login' : role === 'resident' ? 'Home' : 'Dashboard'
+      }
     >
       {!role && <Stack.Screen name="Login" component={LoginScreen} />}
-      <Stack.Screen name="Home" component={HomeScreen} />
-      <Stack.Screen name="Dashboard" component={DashboardScreen} />
+      {role === 'resident' && (
+        <>
+          <Stack.Screen name="Home" component={HomeScreen} />
+          <Stack.Screen name="Dashboard" component={DashboardScreen} />
+        </>
+      )}
+      {role && role !== 'resident' && (
+        <>
+          <Stack.Screen name="Dashboard" component={DashboardScreen} />
+          <Stack.Screen name="Home" component={HomeScreen} />
+        </>
+      )}
     </Stack.Navigator>
   );
 };

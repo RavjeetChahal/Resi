@@ -9,25 +9,59 @@ const DEFAULT_API_URL = Platform.select({
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || DEFAULT_API_URL;
 
-export const transcribeAudio = async ({ uri, mimeType = 'audio/m4a', onUploadProgress } = {}) => {
-  if (!uri) {
-    throw new Error('Recording URI is required for transcription.');
+if (!process.env.EXPO_PUBLIC_API_BASE_URL) {
+  console.warn(
+    `[API] EXPO_PUBLIC_API_BASE_URL is not set. Falling back to platform default: ${DEFAULT_API_URL}`,
+  );
+}
+
+if (API_BASE_URL.includes('your-vercel-project')) {
+  console.warn(
+    `[API] Detected placeholder API URL (${API_BASE_URL}). Update EXPO_PUBLIC_API_BASE_URL to point to your running backend.`,
+  );
+}
+
+export const transcribeAudio = async ({ uri, file, mimeType = 'audio/m4a', onUploadProgress } = {}) => {
+  if (!uri && !file) {
+    throw new Error('Recording data is required for transcription.');
   }
 
-  const fileName = uri.split('/').pop() || `recording-${Date.now()}.m4a`;
-
   const formData = new FormData();
-  formData.append('file', {
-    uri,
-    name: fileName,
-    type: mimeType,
-  });
 
-  const response = await axios.post(`${API_BASE_URL}/api/processInput`, formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-    onUploadProgress,
-  });
+  if (file) {
+    formData.append('file', file);
+  } else if (uri) {
+    const fileName = uri.split('/').pop() || `recording-${Date.now()}.m4a`;
+    formData.append('file', {
+      uri,
+      name: fileName,
+      type: mimeType,
+    });
+  }
 
-  return response.data;
+  console.log(
+    '[API] Uploading audio for transcription',
+    file
+      ? { source: 'web-file', size: file.size, type: file.type }
+      : { source: 'native-uri', uri, mimeType },
+    `→ ${API_BASE_URL}/api/processInput`,
+  );
+
+  try {
+    const response = await axios.post(`${API_BASE_URL}/api/processInput`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      onUploadProgress,
+    });
+
+    console.log('[API] Transcription response received', response.data);
+    return response.data;
+  } catch (error) {
+    console.error('[API] Transcription request failed', {
+      message: error.message,
+      code: error.code,
+      url: `${API_BASE_URL}/api/processInput`,
+    });
+    throw error;
+  }
 };
 
