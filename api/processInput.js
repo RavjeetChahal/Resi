@@ -1,7 +1,7 @@
-const fs = require('fs');
-const formidable = require('formidable');
-const { OpenAI } = require('openai');
-const admin = require('firebase-admin');
+const fs = require("fs");
+const formidable = require("formidable");
+const { OpenAI } = require("openai");
+const admin = require("firebase-admin");
 
 let firebaseApp;
 
@@ -10,8 +10,13 @@ const initFirebase = () => {
     return firebaseApp;
   }
 
-  if (!process.env.FIREBASE_SERVICE_ACCOUNT || !process.env.FIREBASE_DATABASE_URL) {
-    console.warn('Firebase environment variables missing. Skipping database persistence.');
+  if (
+    !process.env.FIREBASE_SERVICE_ACCOUNT ||
+    !process.env.FIREBASE_DATABASE_URL
+  ) {
+    console.warn(
+      "Firebase environment variables missing. Skipping database persistence."
+    );
     return null;
   }
 
@@ -29,7 +34,7 @@ const initFirebase = () => {
 
 const openaiClient = () => {
   if (!process.env.OPENAI_API_KEY) {
-    throw new Error('OPENAI_API_KEY is not set');
+    throw new Error("OPENAI_API_KEY is not set");
   }
 
   return new OpenAI({
@@ -59,21 +64,21 @@ Urgency rules:
 `;
 
   const completion = await client.chat.completions.create({
-    model: 'gpt-4-turbo',
+    model: "gpt-4-turbo",
     temperature: 0,
     messages: [
-      { role: 'system', content: systemPrompt },
+      { role: "system", content: systemPrompt },
       {
-        role: 'user',
+        role: "user",
         content: `Transcript: """${transcript}"""`,
       },
     ],
-    response_format: { type: 'json_object' },
+    response_format: { type: "json_object" },
   });
 
   const raw = completion.choices[0]?.message?.content;
   if (!raw) {
-    throw new Error('Failed to classify transcript');
+    throw new Error("Failed to classify transcript");
   }
   return JSON.parse(raw);
 };
@@ -85,10 +90,10 @@ const persistTicket = async (payload) => {
   }
 
   const db = app.database();
-  const ref = db.ref('tickets').push();
+  const ref = db.ref("tickets").push();
   const ticket = {
     ...payload,
-    status: 'open',
+    status: "open",
     timestamp: new Date().toISOString(),
   };
   await ref.set(ticket);
@@ -97,30 +102,30 @@ const persistTicket = async (payload) => {
 
 const applyCors = (req, res) => {
   const origins = process.env.CORS_ALLOW_ORIGINS
-    ? process.env.CORS_ALLOW_ORIGINS.split(',').map((origin) => origin.trim())
-    : ['*'];
+    ? process.env.CORS_ALLOW_ORIGINS.split(",").map((origin) => origin.trim())
+    : ["*"];
   const requestOrigin = req.headers.origin;
-  const allowOrigin = origins.includes('*')
-    ? '*'
+  const allowOrigin = origins.includes("*")
+    ? "*"
     : origins.find((origin) => origin === requestOrigin) || origins[0];
 
-  res.setHeader('Access-Control-Allow-Origin', allowOrigin);
-  res.setHeader('Access-Control-Allow-Methods', 'POST,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-  res.setHeader('Access-Control-Max-Age', '86400');
+  res.setHeader("Access-Control-Allow-Origin", allowOrigin);
+  res.setHeader("Access-Control-Allow-Methods", "POST,OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Max-Age", "86400");
 };
 
 const handler = async (req, res) => {
   applyCors(req, res);
 
-  if (req.method === 'OPTIONS') {
+  if (req.method === "OPTIONS") {
     res.status(204).end();
     return;
   }
 
-  if (req.method !== 'POST') {
-    res.setHeader('Allow', 'POST');
-    res.status(405).json({ error: 'Method not allowed' });
+  if (req.method !== "POST") {
+    res.setHeader("Allow", "POST");
+    res.status(405).json({ error: "Method not allowed" });
     return;
   }
 
@@ -131,14 +136,14 @@ const handler = async (req, res) => {
 
   form.parse(req, async (err, fields, files) => {
     if (err) {
-      console.error('Upload error:', err);
-      res.status(400).json({ error: 'Invalid audio upload' });
+      console.error("Upload error:", err);
+      res.status(400).json({ error: "Invalid audio upload" });
       return;
     }
 
     const audioFile = files.file;
     if (!audioFile) {
-      res.status(400).json({ error: 'Audio file is required' });
+      res.status(400).json({ error: "Audio file is required" });
       return;
     }
 
@@ -147,14 +152,15 @@ const handler = async (req, res) => {
 
       const transcription = await client.audio.transcriptions.create({
         file: fs.createReadStream(audioFile.filepath),
-        model: 'whisper-1',
-        response_format: 'text',
+        model: "whisper-1",
+        response_format: "text",
       });
 
-      const transcript = typeof transcription === 'string' ? transcription : transcription.text;
+      const transcript =
+        typeof transcription === "string" ? transcription : transcription.text;
 
       if (!transcript) {
-        res.status(200).json({ transcript: '' });
+        res.status(200).json({ transcript: "" });
         return;
       }
 
@@ -172,7 +178,10 @@ const handler = async (req, res) => {
           summary: classification.summary,
         });
       } catch (classificationError) {
-        console.warn('Classification or persistence failed:', classificationError.message);
+        console.warn(
+          "Classification or persistence failed:",
+          classificationError.message
+        );
       }
 
       res.status(200).json({
@@ -181,12 +190,12 @@ const handler = async (req, res) => {
         classification,
         reply:
           classification?.reply ||
-          'Thanks! MoveMate captured your issue and will share updates once a team member picks it up.',
+          "Thanks! MoveMate captured your issue and will share updates once a team member picks it up.",
       });
     } catch (processingError) {
-      console.error('Processing error:', processingError);
+      console.error("Processing error:", processingError);
       res.status(500).json({
-        error: 'Failed to transcribe audio',
+        error: "Failed to transcribe audio",
         details: processingError.message,
       });
     }
@@ -199,4 +208,3 @@ module.exports.config = {
     bodyParser: false,
   },
 };
-
