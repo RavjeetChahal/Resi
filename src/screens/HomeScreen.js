@@ -18,7 +18,7 @@ import {
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { Audio } from "expo-av";
-import * as FileSystem from "expo-file-system";
+import * as FileSystem from "expo-file-system/legacy";
 import { ChatBubble } from "../components/ChatBubble";
 import { MicButton } from "../components/MicButton";
 import { colors } from "../theme/colors";
@@ -145,6 +145,7 @@ const HomeScreen = ({ navigation }) => {
 
     try {
       log("Stopping native recording…");
+      log("Status before stop", await recording.getStatusAsync());
       await recording.stopAndUnloadAsync();
       const uri = recording.getURI();
       recordingRef.current = null;
@@ -217,19 +218,23 @@ const HomeScreen = ({ navigation }) => {
     setError(null);
     try {
       log("Configuring Audio mode for native recording…");
-          await Audio.setAudioModeAsync({
-            allowsRecordingIOS: true,
-            playsInSilentModeIOS: true,
-            shouldDuckAndroid: true,
-            playThroughEarpieceAndroid: false,
-            staysActiveInBackground: false,
-          });
+      const audioMode = {
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+        shouldDuckAndroid: true,
+        playThroughEarpieceAndroid: false,
+        staysActiveInBackground: false,
+      };
+      log("Audio mode configuration", audioMode);
+      await Audio.setAudioModeAsync(audioMode);
 
       const recording = new Audio.Recording();
       await recording.prepareToRecordAsync(
         Audio.RecordingOptionsPresets.HIGH_QUALITY
       );
+      log("Native recording prepared. Status", await recording.getStatusAsync());
       await recording.startAsync();
+      log("Native recording started. Status", await recording.getStatusAsync());
       recordingRef.current = recording;
       setIsRecording(true);
       setTranscript("");
@@ -333,6 +338,11 @@ const HomeScreen = ({ navigation }) => {
         if (response?.audio?.data) {
           const contentType = response.audio.contentType || "audio/mpeg";
           const base64 = response.audio.data;
+          log("Received audio payload", {
+            hasAudio: Boolean(base64),
+            contentType,
+            transcriptLength: transcriptText.length,
+          });
           try {
             if (Platform.OS === "web") {
               // Convert base64 to binary and play via browser Audio
@@ -356,11 +366,13 @@ const HomeScreen = ({ navigation }) => {
               await FileSystem.writeAsStringAsync(fileUri, base64, {
                 encoding: FileSystem.EncodingType.Base64,
               });
+              log("Saved TTS audio to file", fileUri);
               const { sound } = await Audio.Sound.createAsync(
                 { uri: fileUri },
                 { shouldPlay: true }
               );
               sound.setOnPlaybackStatusUpdate(async (status) => {
+                log("Playback status update", status);
                 if (status?.didJustFinish) {
                   try {
                     await sound.unloadAsync();

@@ -1,5 +1,6 @@
 import axios from "axios";
 import { Platform } from "react-native";
+import Constants from "expo-constants";
 
 const DEFAULT_API_URL = Platform.select({
   ios: "http://localhost:3000",
@@ -18,6 +19,12 @@ if (!process.env.EXPO_PUBLIC_API_BASE_URL) {
 if (API_BASE_URL.includes("your-vercel-project")) {
   console.warn(
     `[API] Detected placeholder API URL (${API_BASE_URL}). Update EXPO_PUBLIC_API_BASE_URL to point to your running backend.`
+  );
+}
+
+if (API_BASE_URL.includes("localhost")) {
+  console.warn(
+    "[API] EXPO_PUBLIC_API_BASE_URL points to localhost. Physical devices cannot reach this address."
   );
 }
 
@@ -48,6 +55,14 @@ export const transcribeAudio = async ({
   // Add conversation ID to track context
   formData.append("conversationId", conversationId || `conv-${Date.now()}`);
 
+  const deviceInfo = {
+    deviceName: Constants.deviceName,
+    platform: Platform.OS,
+    expoHost: Constants.manifest?.debuggerHost,
+    appOwnership: Constants.appOwnership,
+  };
+  console.log("[API] Device info", deviceInfo);
+  console.log("[API] Base URL resolved to", API_BASE_URL);
   console.log(
     "[API] Uploading audio for transcription",
     file
@@ -57,22 +72,25 @@ export const transcribeAudio = async ({
   );
 
   try {
-    const response = await axios.post(
-      `${API_BASE_URL}/api/processInput`,
-      formData,
-      {
-        headers: { "Content-Type": "multipart/form-data" },
-        onUploadProgress,
-      }
-    );
+    const response = await axios.post(`${API_BASE_URL}/api/processInput`, formData, {
+      headers: { "Content-Type": "multipart/form-data" },
+      onUploadProgress,
+      timeout: 20000,
+    });
 
-    console.log("[API] Transcription response received", response.data);
+    console.log("[API] Transcription response received", {
+      status: response.status,
+      keys: Object.keys(response.data || {}),
+    });
     return response.data;
   } catch (error) {
     console.error("[API] Transcription request failed", {
       message: error.message,
       code: error.code,
+      status: error.response?.status,
       url: `${API_BASE_URL}/api/processInput`,
+      readyState: error.request?.readyState,
+      responseType: error.request?.responseType,
     });
     throw error;
   }

@@ -19,6 +19,7 @@ if (!process.env.CORS_ALLOW_ORIGINS) {
 }
 
 const app = express();
+const host = process.env.HOST || "0.0.0.0";
 const port = process.env.PORT || 3000;
 
 const allowedOrigins = (
@@ -30,7 +31,16 @@ const allowedOrigins = (
 
 app.use(
   cors({
-    origin: allowedOrigins.includes("*") ? "*" : allowedOrigins,
+    origin: (origin, callback) => {
+      if (!origin) {
+        return callback(null, true);
+      }
+      if (allowedOrigins.includes("*") || allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      console.warn("[server] Blocked CORS origin", origin);
+      return callback(new Error("Not allowed by CORS"));
+    },
     methods: ["POST", "OPTIONS"],
     allowedHeaders: ["Content-Type"],
   })
@@ -182,6 +192,7 @@ app.post("/api/processInput", (req, res) => {
       mimetype: audioFile.mimetype,
       size: audioFile.size,
       filepath: audioFile.filepath,
+      conversationId: fields?.conversationId,
     });
 
     const audioFilePath =
@@ -197,7 +208,9 @@ app.post("/api/processInput", (req, res) => {
       return;
     }
 
+    const conversationId = fields?.conversationId;
     try {
+      console.time("[server] whisper+gpt pipeline");
       const client = openaiClient();
 
       const transcription = await client.audio.transcriptions.create({
@@ -221,7 +234,7 @@ app.post("/api/processInput", (req, res) => {
       let ticketRecord = null;
 
       try {
-        classification = await classifyTranscript({ transcript });
+        classification = await classifyTranscript({ transcript, conversationId });
         ticketRecord = await persistTicket({
           transcript,
           category: classification.category,
@@ -268,6 +281,7 @@ app.post("/api/processInput", (req, res) => {
           },
         });
         console.log("[server] Response with TTS audio sent to client");
+        console.timeEnd("[server] whisper+gpt pipeline");
       } catch (ttsError) {
         console.warn(
           "[server] TTS generation failed:",
@@ -280,6 +294,7 @@ app.post("/api/processInput", (req, res) => {
           reply,
         });
         console.log("[server] Response (text-only) sent to client");
+        console.timeEnd("[server] whisper+gpt pipeline");
       }
     } catch (processingError) {
       console.error("Processing error:", processingError);
@@ -298,6 +313,6 @@ app.post("/api/processInput", (req, res) => {
 app.get("/health", (req, res) => {
   res.json({ status: "ok" });
 });
-app.listen(port, () => {
-  console.log(`MoveMate server listening on http://localhost:${port}`);
+app.listen(port, host, () => {
+  console.log(`MoveMate server listening on http://${host}:${port}`);
 });
