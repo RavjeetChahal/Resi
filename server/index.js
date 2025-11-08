@@ -14,7 +14,7 @@ if (!process.env.OPENAI_API_KEY) {
 
 if (!process.env.CORS_ALLOW_ORIGINS) {
   console.warn(
-    "[server] CORS_ALLOW_ORIGINS not provided. Defaulting to http://localhost:8083"
+    "[server] CORS_ALLOW_ORIGINS not provided. Defaulting to http://localhost:8081"
   );
 }
 
@@ -22,7 +22,7 @@ const app = express();
 const port = process.env.PORT || 3000;
 
 const allowedOrigins = (
-  process.env.CORS_ALLOW_ORIGINS || "http://localhost:8083"
+  process.env.CORS_ALLOW_ORIGINS || "http://localhost:8081"
 )
   .split(",")
   .map((origin) => origin.trim())
