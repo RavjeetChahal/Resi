@@ -4,8 +4,8 @@ COPY package*.json ./
 RUN npm install
 COPY . .
 
-# Build the Expo web app
-RUN npm run web:build
+# Clear Expo cache and build the web app fresh
+RUN npx expo export --clear --platform web
 
 EXPOSE 3000
 CMD ["npm", "run", "server"]
