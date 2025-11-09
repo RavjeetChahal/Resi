@@ -57,6 +57,41 @@ const HomeScreen = ({ navigation }) => {
   }, [conversationState.conversationId, updateConversationState]);
 
   // Fetch resident's previous tickets from Firebase
+  const parseDateValue = useCallback((value) => {
+    if (!value && value !== 0) {
+      return null;
+    }
+    if (typeof value === "object" && value?.seconds) {
+      return new Date(value.seconds * 1000).toISOString();
+    }
+    const date =
+      typeof value === "number" ? new Date(value) : new Date(String(value));
+    if (Number.isNaN(date.getTime())) {
+      return null;
+    }
+    return date.toISOString();
+  }, []);
+
+  const formatDisplayDate = useCallback((value) => {
+    if (!value) return "Unknown";
+    try {
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) {
+        return "Unknown";
+      }
+      const formatter = new Intl.DateTimeFormat(undefined, {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+      });
+      return formatter.format(date);
+    } catch {
+      return "Unknown";
+    }
+  }, []);
+
   useEffect(() => {
     if (!user?.uid) return;
     setLoadingTickets(true);
@@ -66,12 +101,36 @@ const HomeScreen = ({ navigation }) => {
       const ticketsRef = ref(db, "tickets");
       const unsubscribe = onValue(ticketsRef, (snapshot) => {
         const data = snapshot.val() || {};
+        const normalizeTicket = ([id, ticket]) => {
+          const reportedAt =
+            parseDateValue(
+              ticket.reportedAt ||
+                ticket.reported_at ||
+                ticket.createdAt ||
+                ticket.created_at ||
+                ticket.timestamp
+            ) || null;
+          return {
+            id,
+            status: ticket.status || "open",
+            urgency: ticket.urgency || "unknown",
+            summary: ticket.summary || ticket.transcript || "No issue reported.",
+            location: ticket.location || "Unknown",
+            reportedAt,
+            queuePosition:
+              ticket.queuePosition ?? ticket.queue_position ?? null,
+            raw: ticket,
+          };
+        };
+
         let userTickets = Object.entries(data)
-          .map(([id, ticket]) => ({ id, ...ticket }))
-          .filter((t) => t.owner === user.uid);
+          .filter(([, ticket]) => ticket.owner === user.uid)
+          .map(normalizeTicket);
         // Sort tickets by createdAt descending (latest first)
         userTickets = userTickets.sort(
-          (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
+          (a, b) =>
+            (b.reportedAt ? new Date(b.reportedAt).getTime() : 0) -
+            (a.reportedAt ? new Date(a.reportedAt).getTime() : 0)
         );
         setTickets(userTickets);
         setLoadingTickets(false);
@@ -550,34 +609,39 @@ const HomeScreen = ({ navigation }) => {
             <FlatList
               data={tickets}
               keyExtractor={(item) => item.id}
-              renderItem={({ item }) => (
-                <View style={{ marginBottom: 12 }}>
-                  <Text
-                    style={{
-                      fontWeight: "bold",
-                      color: colors.primary,
-                      marginBottom: 2,
-                    }}
-                  >
-                    Request #{item.id}
-                  </Text>
-                  <Text style={{ color: colors.text }}>
-                    {item.summary || item.transcript}
-                  </Text>
-                  <Text style={{ color: colors.muted, fontSize: 13 }}>
-                    Status: {item.status || "Open"}
-                  </Text>
-                  <Text style={{ color: colors.muted, fontSize: 13 }}>
-                    Urgency: {item.urgency || "Unknown"}
-                  </Text>
-                  <Text style={{ color: colors.muted, fontSize: 13 }}>
-                    Reported:{" "}
-                    {item.createdAt
-                      ? new Date(item.createdAt).toLocaleString()
-                      : ""}
-                  </Text>
-                </View>
-              )}
+              renderItem={({ item }) => {
+                const statusValue = (item.status || "").toLowerCase();
+                const showQueue =
+                  statusValue === "open" || statusValue === "in_progress";
+                const queueLabel =
+                  item.queuePosition && Number(item.queuePosition) > 0
+                    ? `#${item.queuePosition}`
+                    : "Assigning…";
+
+                return (
+                  <View style={styles.ticketCard}>
+                    <Text style={styles.ticketId}>Request #{item.id}</Text>
+                    <Text style={styles.ticketSummary}>{item.summary}</Text>
+                    <Text style={styles.ticketMeta}>
+                      Status: {item.status || "Open"}
+                    </Text>
+                    <Text style={styles.ticketMeta}>
+                      Urgency: {item.urgency || "Unknown"}
+                    </Text>
+                    <Text style={styles.ticketMeta}>
+                      Location: {item.location || "Unknown"}
+                    </Text>
+                    {showQueue && (
+                      <Text style={styles.ticketMeta}>
+                        Queue position: {queueLabel}
+                      </Text>
+                    )}
+                    <Text style={styles.ticketMeta}>
+                      Reported: {formatDisplayDate(item.reportedAt)}
+                    </Text>
+                  </View>
+                );
+              }}
               contentContainerStyle={styles.chatList}
               showsVerticalScrollIndicator={false}
             />
@@ -669,6 +733,27 @@ const styles = StyleSheet.create({
   chatList: {
     flexGrow: 1,
     paddingBottom: 16,
+  },
+  ticketCard: {
+    backgroundColor: colors.card,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 16,
+    marginBottom: 16,
+    gap: 4,
+  },
+  ticketId: {
+    fontWeight: "700",
+    color: colors.primary,
+  },
+  ticketSummary: {
+    color: colors.text,
+    fontWeight: "600",
+  },
+  ticketMeta: {
+    color: colors.muted,
+    fontSize: 13,
   },
   transcriptContainer: {
     backgroundColor: colors.card,

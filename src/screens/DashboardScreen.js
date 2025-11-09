@@ -1,5 +1,6 @@
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  Alert,
   FlatList,
   SafeAreaView,
   StyleSheet,
@@ -12,35 +13,126 @@ import { StatusBar } from "expo-status-bar";
 import { colors } from "../theme/colors";
 import { IssueCard } from "../components/IssueCard";
 import { useAuth } from "../context/AuthContext";
-import { useIssues } from "../services/issueService";
+import {
+  updateIssueQueuePosition,
+  updateIssueStatus,
+  useIssues,
+} from "../services/issueService";
 
-const urgencyOrder = ["HIGH", "MEDIUM", "LOW"];
+const urgencyOrder = ["HIGH", "MEDIUM", "LOW", "UNKNOWN"];
+const CLOSED_HIDE_DELAY_MS = 7000;
 
 const DashboardScreen = ({ navigation }) => {
   const [filterUrgency, setFilterUrgency] = useState("ALL");
+  const [nowTick, setNowTick] = useState(Date.now());
   const { logout } = useAuth();
   const issuesData = useIssues();
 
-  const issues = useMemo(() => {
-    const sorted = [...issuesData].sort(
-      (a, b) =>
-        urgencyOrder.indexOf(a.urgency) - urgencyOrder.indexOf(b.urgency)
-    );
-    if (filterUrgency === "ALL") return sorted;
-    return sorted.filter((issue) => issue.urgency === filterUrgency);
-  }, [filterUrgency, issuesData]);
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setNowTick(Date.now());
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
 
-  const handleLogout = async () => {
+  const { sortedIssues, filteredIssues } = useMemo(() => {
+    const now = nowTick;
+    const visibleIssues = issuesData.filter((issue) => {
+      if (issue.status !== "closed") {
+        return true;
+      }
+      if (!issue.closedAt) {
+        return true;
+      }
+      const closedMs = new Date(issue.closedAt).getTime();
+      if (Number.isNaN(closedMs)) {
+        return true;
+      }
+      return now - closedMs < CLOSED_HIDE_DELAY_MS;
+    });
+
+    const getUrgencyIndex = (issue) => {
+      const idx = urgencyOrder.indexOf(issue.urgency);
+      return idx === -1 ? urgencyOrder.length : idx;
+    };
+
+    const getReportedAtMs = (issue) => {
+      if (!issue.reportedAt) {
+        return Number.MAX_SAFE_INTEGER;
+      }
+      const value = new Date(issue.reportedAt).getTime();
+      return Number.isNaN(value) ? Number.MAX_SAFE_INTEGER : value;
+    };
+
+    const sorted = [...visibleIssues].sort((a, b) => {
+      const urgencyDiff = getUrgencyIndex(a) - getUrgencyIndex(b);
+      if (urgencyDiff !== 0) {
+        return urgencyDiff;
+      }
+      return getReportedAtMs(a) - getReportedAtMs(b);
+    });
+
+    const filteredList =
+      filterUrgency === "ALL"
+        ? sorted
+        : sorted.filter((issue) => issue.urgency === filterUrgency);
+
+    return { sortedIssues: sorted, filteredIssues: filteredList };
+  }, [filterUrgency, issuesData, nowTick]);
+
+  useEffect(() => {
+    if (!sortedIssues.length) {
+      return;
+    }
+
+    const syncPositions = async () => {
+      const updates = [];
+      sortedIssues.forEach((issue, index) => {
+        const expectedPosition = index + 1;
+        if (issue.queuePosition !== expectedPosition) {
+          updates.push(
+            updateIssueQueuePosition(issue.id, expectedPosition).catch(
+              (error) => {
+                console.warn(
+                  "[Dashboard] Failed to sync queue position",
+                  issue.id,
+                  error
+                );
+              }
+            )
+          );
+        }
+      });
+      if (updates.length) {
+        await Promise.all(updates);
+      }
+    };
+
+    syncPositions();
+  }, [sortedIssues]);
+
+  const handleLogout = useCallback(async () => {
     console.log("[Dashboard] Signing out user");
     await logout();
-    // Reset navigation stack to RoleSelect screen
     navigation.dispatch(
       CommonActions.reset({
         index: 0,
         routes: [{ name: "RoleSelect" }],
       })
     );
-  };
+  }, [logout, navigation]);
+
+  const handleStatusChange = useCallback(async (issueId, nextStatus) => {
+    try {
+      await updateIssueStatus(issueId, nextStatus);
+    } catch (error) {
+      console.error("[Dashboard] Failed to update ticket status:", error);
+      Alert.alert(
+        "Update failed",
+        "We couldn't update the ticket status. Please try again."
+      );
+    }
+  }, []);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -83,11 +175,17 @@ const DashboardScreen = ({ navigation }) => {
         </View>
 
         <FlatList
-          data={issues}
+          data={filteredIssues}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.listContent}
           ItemSeparatorComponent={() => <View style={{ height: 16 }} />}
-          renderItem={({ item }) => <IssueCard issue={item} />}
+          renderItem={({ item, index }) => (
+            <IssueCard
+              issue={item}
+              position={index + 1}
+              onStatusChange={(status) => handleStatusChange(item.id, status)}
+            />
+          )}
           showsVerticalScrollIndicator={false}
         />
       </View>

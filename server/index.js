@@ -141,10 +141,18 @@ const persistTicket = async (payload) => {
 
   const db = firebase.database();
   const ref = db.ref("tickets").push();
+  const ticketsSnapshot = await db.ref("tickets").once("value");
+  const existingTickets = ticketsSnapshot.val() || {};
+  const queuePositions = Object.values(existingTickets)
+    .map((ticket) => Number(ticket.queuePosition))
+    .filter((value) => Number.isFinite(value) && value > 0);
+  const nextQueuePosition =
+    queuePositions.length > 0 ? Math.max(...queuePositions) + 1 : 1;
   const ticket = {
     ...payload,
     status: "open",
     timestamp: new Date().toISOString(),
+    queuePosition: nextQueuePosition,
   };
   await ref.set(ticket);
   return { id: ref.key, ...ticket };
