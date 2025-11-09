@@ -1,6 +1,6 @@
-import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { colors, shadows } from '../theme/colors';
+import React from "react";
+import { Pressable, StyleSheet, Text, View } from "react-native";
+import { colors, shadows } from "../theme/colors";
 
 const urgencyColors = {
   HIGH: colors.danger,
@@ -10,11 +10,23 @@ const urgencyColors = {
 
 export const IssueCard = ({ issue, onPress }) => {
   return (
-    <Pressable style={({ pressed }) => [styles.container, pressed && styles.pressed]} onPress={() => onPress?.(issue)}>
+    <Pressable
+      style={({ pressed }) => [styles.container, pressed && styles.pressed]}
+      onPress={() => onPress?.(issue)}
+    >
       <View style={styles.header}>
         <Text style={styles.id}>{issue.id}</Text>
-        <View style={[styles.badge, { backgroundColor: `${urgencyColors[issue.urgency]}22` }]}>
-          <Text style={[styles.badgeText, { color: urgencyColors[issue.urgency] }]}>{issue.urgency}</Text>
+        <View
+          style={[
+            styles.badge,
+            { backgroundColor: `${urgencyColors[issue.urgency]}22` },
+          ]}
+        >
+          <Text
+            style={[styles.badgeText, { color: urgencyColors[issue.urgency] }]}
+          >
+            {issue.urgency}
+          </Text>
         </View>
       </View>
 
@@ -51,13 +63,13 @@ const styles = StyleSheet.create({
     opacity: 0.94,
   },
   header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
   },
   id: {
     fontSize: 14,
-    fontWeight: '700',
+    fontWeight: "700",
     color: colors.muted,
     letterSpacing: 0.4,
   },
@@ -68,28 +80,27 @@ const styles = StyleSheet.create({
   },
   badgeText: {
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: "700",
   },
   summary: {
     fontSize: 17,
-    fontWeight: '600',
+    fontWeight: "600",
     color: colors.text,
     lineHeight: 24,
   },
   metaRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
   },
   metaLabel: {
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: "600",
     color: colors.muted,
   },
   metaText: {
     fontSize: 14,
-    fontWeight: '500',
+    fontWeight: "500",
     color: colors.text,
   },
 });
-

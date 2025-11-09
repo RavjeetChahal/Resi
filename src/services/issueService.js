@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
-import { mockIssues } from '../assets/data/issues';
+import { useEffect, useState } from "react";
+import { mockIssues } from "../assets/data/issues";
+// Service to manage issue data
 
 export const fetchIssues = async () => {
   return mockIssues;
@@ -20,4 +21,3 @@ export const useIssues = () => {
 
   return issues;
 };
-

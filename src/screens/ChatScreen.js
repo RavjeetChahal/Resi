@@ -14,6 +14,8 @@ import * as FileSystem from "expo-file-system";
 import { transcribeAudio } from "../services/api";
 import { colors } from "../theme/colors";
 import { ChatBubble } from "../components/ChatBubble";
+import { getFirebaseDatabase } from "../services/firebase";
+import { ref, push } from "firebase/database";
 
 const ChatScreen = ({ navigation }) => {
   const { conversationState, updateConversationState } = useConversation();
@@ -127,6 +129,23 @@ const ChatScreen = ({ navigation }) => {
           timestamp: Date.now(),
         },
       ]);
+      // Store ticket in Firebase if backend returned structured classification
+      if (response?.classification && user) {
+        try {
+          const db = getFirebaseDatabase();
+          if (db) {
+            const ticketsRef = ref(db, "tickets");
+            await push(ticketsRef, {
+              ...response.classification,
+              transcript: transcriptText,
+              owner: user.uid,
+              createdAt: new Date().toISOString(),
+            });
+          }
+        } catch (dbErr) {
+          // non-fatal
+        }
+      }
     } catch (err) {
       setError("Upload failed. Try again.");
     } finally {

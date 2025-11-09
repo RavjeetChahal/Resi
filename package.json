@@ -16,6 +16,7 @@
     "@react-navigation/native": "^7.1.19",
     "@react-navigation/native-stack": "^7.6.2",
     "axios": "^1.13.2",
+    "babel": "^5.8.38",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "expo": "~54.0.23",

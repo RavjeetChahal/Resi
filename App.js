@@ -7,6 +7,8 @@ import { ConversationProvider } from "./src/context/ConversationContext";
 import LoginScreen from "./src/screens/LoginScreen";
 import HomeScreen from "./src/screens/HomeScreen";
 import DashboardScreen from "./src/screens/DashboardScreen";
+import ChatScreen from "./src/screens/ChatScreen";
+import RoleSelectScreen from "./src/screens/RoleSelectScreen";
 import { colors } from "./src/theme/colors";
 
 const Stack = createNativeStackNavigator();
@@ -24,8 +26,18 @@ const navigationTheme = {
 };
 
 const AppNavigator = () => {
-  const { role } = useAuth();
-  const navigatorKey = role ?? "guest";
+  const { role, user } = useAuth();
+  const isAuthenticated = !!user;
+  const navigatorKey = `${role ?? "guest"}-${
+    isAuthenticated ? "auth" : "anon"
+  }`;
+  const initialRouteName = !role
+    ? "RoleSelect"
+    : !isAuthenticated
+    ? "Login"
+    : role === "resident"
+    ? "Home"
+    : "Dashboard";
 
   return (
     <Stack.Navigator
@@ -34,23 +46,13 @@ const AppNavigator = () => {
         headerShown: false,
         animation: "slide_from_right",
       }}
-      initialRouteName={
-        !role ? "Login" : role === "resident" ? "Home" : "Dashboard"
-      }
+      initialRouteName={initialRouteName}
     >
-      {!role && <Stack.Screen name="Login" component={LoginScreen} />}
-      {role === "resident" && (
-        <>
-          <Stack.Screen name="Home" component={HomeScreen} />
-          <Stack.Screen name="Dashboard" component={DashboardScreen} />
-        </>
-      )}
-      {role && role !== "resident" && (
-        <>
-          <Stack.Screen name="Dashboard" component={DashboardScreen} />
-          <Stack.Screen name="Home" component={HomeScreen} />
-        </>
-      )}
+      <Stack.Screen name="RoleSelect" component={RoleSelectScreen} />
+      <Stack.Screen name="Login" component={LoginScreen} />
+      <Stack.Screen name="Home" component={HomeScreen} />
+      <Stack.Screen name="Chat" component={ChatScreen} />
+      <Stack.Screen name="Dashboard" component={DashboardScreen} />
     </Stack.Navigator>
   );
 };

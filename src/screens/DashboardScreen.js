@@ -1,23 +1,31 @@
-import React, { useMemo, useState } from 'react';
-import { FlatList, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { StatusBar } from 'expo-status-bar';
-import { colors } from '../theme/colors';
-import { IssueCard } from '../components/IssueCard';
-import { useAuth } from '../context/AuthContext';
-import { useIssues } from '../services/issueService';
+import React, { useMemo, useState } from "react";
+import {
+  FlatList,
+  SafeAreaView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import { StatusBar } from "expo-status-bar";
+import { colors } from "../theme/colors";
+import { IssueCard } from "../components/IssueCard";
+import { useAuth } from "../context/AuthContext";
+import { useIssues } from "../services/issueService";
 
-const urgencyOrder = ['HIGH', 'MEDIUM', 'LOW'];
+const urgencyOrder = ["HIGH", "MEDIUM", "LOW"];
 
 const DashboardScreen = ({ navigation }) => {
-  const [filterUrgency, setFilterUrgency] = useState('ALL');
+  const [filterUrgency, setFilterUrgency] = useState("ALL");
   const { resetRole } = useAuth();
   const issuesData = useIssues();
 
   const issues = useMemo(() => {
     const sorted = [...issuesData].sort(
-      (a, b) => urgencyOrder.indexOf(a.urgency) - urgencyOrder.indexOf(b.urgency),
+      (a, b) =>
+        urgencyOrder.indexOf(a.urgency) - urgencyOrder.indexOf(b.urgency)
     );
-    if (filterUrgency === 'ALL') return sorted;
+    if (filterUrgency === "ALL") return sorted;
     return sorted.filter((issue) => issue.urgency === filterUrgency);
   }, [filterUrgency, issuesData]);
 
@@ -34,7 +42,8 @@ const DashboardScreen = ({ navigation }) => {
             <Text style={styles.eyebrow}>Team Dashboard</Text>
             <Text style={styles.title}>Live issue queue</Text>
             <Text style={styles.subtitle}>
-              Track high-urgency tickets in real time as MoveMate routes new reports to your team.
+              Track high-urgency tickets in real time as MoveMate routes new
+              reports to your team.
             </Text>
           </View>
           <TouchableOpacity onPress={handleLogout} style={styles.logoutButton}>
@@ -43,7 +52,7 @@ const DashboardScreen = ({ navigation }) => {
         </View>
 
         <View style={styles.filters}>
-          {['ALL', 'HIGH', 'MEDIUM', 'LOW'].map((level) => {
+          {["ALL", "HIGH", "MEDIUM", "LOW"].map((level) => {
             const isActive = filterUrgency === level;
             return (
               <TouchableOpacity
@@ -51,7 +60,14 @@ const DashboardScreen = ({ navigation }) => {
                 style={[styles.filterChip, isActive && styles.filterChipActive]}
                 onPress={() => setFilterUrgency(level)}
               >
-                <Text style={[styles.filterText, isActive && styles.filterTextActive]}>{level}</Text>
+                <Text
+                  style={[
+                    styles.filterText,
+                    isActive && styles.filterTextActive,
+                  ]}
+                >
+                  {level}
+                </Text>
               </TouchableOpacity>
             );
           })}
@@ -87,13 +103,13 @@ const styles = StyleSheet.create({
   },
   eyebrow: {
     fontSize: 14,
-    fontWeight: '700',
+    fontWeight: "700",
     color: colors.primary,
     letterSpacing: 1,
   },
   title: {
     fontSize: 26,
-    fontWeight: '800',
+    fontWeight: "800",
     color: colors.text,
     marginTop: 6,
   },
@@ -103,7 +119,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   logoutButton: {
-    position: 'absolute',
+    position: "absolute",
     right: 0,
     top: 0,
     paddingVertical: 6,
@@ -111,14 +127,14 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: 1,
     borderColor: colors.border,
-    backgroundColor: '#FFFFFFAA',
+    backgroundColor: "#FFFFFFAA",
   },
   logoutText: {
     fontSize: 13,
     color: colors.muted,
   },
   filters: {
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: 12,
     marginBottom: 16,
   },
@@ -128,7 +144,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderWidth: 1,
     borderColor: colors.border,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
   },
   filterChipActive: {
     backgroundColor: colors.primary,
@@ -136,14 +152,13 @@ const styles = StyleSheet.create({
   },
   filterText: {
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: "600",
     color: colors.muted,
   },
   filterTextActive: {
-    color: '#FFFFFF',
+    color: "#FFFFFF",
   },
   listContent: {
     paddingBottom: 32,
   },
 });
-

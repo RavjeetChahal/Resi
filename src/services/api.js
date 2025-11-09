@@ -1,5 +1,6 @@
 import axios from "axios";
 import { Platform } from "react-native";
+// Determine default API URL based on platform
 
 const DEFAULT_API_URL = Platform.select({
   ios: "http://localhost:3000",

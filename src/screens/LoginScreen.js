@@ -1,58 +1,100 @@
-import React from 'react';
-import { SafeAreaView, StyleSheet, Text, View } from 'react-native';
-import { RoleCard } from '../components/RoleCard';
-import { colors } from '../theme/colors';
-import { useAuth } from '../context/AuthContext';
-
-const roleOptions = [
-  {
-    key: 'resident',
-    title: 'Resident',
-    description: 'Report maintenance or residential life issues quickly using your voice.',
-    primary: true,
-  },
-  {
-    key: 'maintenance',
-    title: 'Maintenance',
-    description: 'Review, prioritize, and resolve maintenance tickets in real time.',
-  },
-  {
-    key: 'ra',
-    title: 'Resident Assistant',
-    description: 'Stay on top of student-life issues and coordinate follow-ups.',
-  },
-];
+import React, { useEffect, useState } from "react";
+import {
+  SafeAreaView,
+  StyleSheet,
+  Text,
+  View,
+  TextInput,
+  TouchableOpacity,
+  Alert,
+} from "react-native";
+import { colors } from "../theme/colors";
+import { useAuth } from "../context/AuthContext";
 
 const LoginScreen = ({ navigation }) => {
-  const { setRole } = useAuth();
+  const { role, login, user } = useAuth();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const handleSelectRole = (roleKey) => {
-    setRole(roleKey);
+  useEffect(() => {
+    if (!role) {
+      // If user somehow lands on Login without selecting a role, send them back
+      navigation.replace("RoleSelect");
+    }
+  }, [role, navigation]);
+
+  const handleLogin = async () => {
+    if (!email || !password) {
+      Alert.alert("Missing info", "Please enter your email and password.");
+      return;
+    }
+    setLoading(true);
+    try {
+      await login(email, password);
+    } catch (err) {
+      Alert.alert("Login failed", err.message || "Could not log in.");
+    } finally {
+      setLoading(false);
+    }
   };
+
+  // Navigate after login if user and role are set
+  React.useEffect(() => {
+    if (user && role) {
+      if (role === "resident") {
+        navigation.replace("Home");
+      } else {
+        navigation.replace("Dashboard");
+      }
+    }
+  }, [user, role, navigation]);
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
         <View style={styles.header}>
           <Text style={styles.eyebrow}>MoveMate</Text>
-          <Text style={styles.title}>Choose how you’ll use MoveMate</Text>
+          <Text style={styles.title}>Sign in to MoveMate</Text>
           <Text style={styles.subtitle}>
-            Residents can report issues with voice. Maintenance teams and RAs can triage live issues from their
-            dashboards.
+            Enter your email and password to continue.
           </Text>
         </View>
 
-        <View style={styles.rolesGrid}>
-          {roleOptions.map((role) => (
-            <RoleCard
-              key={role.key}
-              title={role.title}
-              description={role.description}
-              isPrimary={role.primary}
-              onPress={() => handleSelectRole(role.key)}
-            />
-          ))}
-        </View>
+        <TextInput
+          style={styles.input}
+          placeholder="Email"
+          autoCapitalize="none"
+          keyboardType="email-address"
+          value={email}
+          onChangeText={setEmail}
+        />
+        <TextInput
+          style={styles.input}
+          placeholder="Password"
+          secureTextEntry
+          value={password}
+          onChangeText={setPassword}
+        />
+
+        <TouchableOpacity
+          style={[styles.loginButton, loading && { opacity: 0.6 }]}
+          onPress={handleLogin}
+          disabled={loading}
+        >
+          <Text style={styles.loginButtonText}>
+            {loading ? "Signing in..." : "Sign In"}
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={{ alignSelf: "center", marginTop: 12 }}
+          onPress={() => navigation.replace("RoleSelect")}
+        >
+          <Text style={{ color: colors.primary, fontWeight: "600" }}>
+            Choose a different role
+          </Text>
+        </TouchableOpacity>
       </View>
     </SafeAreaView>
   );
@@ -76,13 +118,13 @@ const styles = StyleSheet.create({
   },
   eyebrow: {
     fontSize: 14,
-    fontWeight: '700',
+    fontWeight: "700",
     color: colors.primary,
     letterSpacing: 1.2,
   },
   title: {
     fontSize: 28,
-    fontWeight: '800',
+    fontWeight: "800",
     color: colors.text,
     lineHeight: 36,
   },
@@ -91,9 +133,28 @@ const styles = StyleSheet.create({
     color: colors.muted,
     lineHeight: 22,
   },
-  rolesGrid: {
-    flex: 1,
-    gap: 18,
+  input: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 12,
+    fontSize: 16,
+    backgroundColor: "#fff",
+  },
+  loginButton: {
+    backgroundColor: colors.primary,
+    borderRadius: 999,
+    paddingVertical: 16,
+    paddingHorizontal: 32,
+    alignItems: "center",
+    alignSelf: "center",
+    marginTop: 24,
+    minWidth: 200,
+  },
+  loginButtonText: {
+    color: "#fff",
+    fontWeight: "700",
+    fontSize: 16,
   },
 });
-
