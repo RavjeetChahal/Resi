@@ -34,7 +34,16 @@ const allowedOrigins = (
 // Serve static files from Expo web build
 // Expo SDK 54+ outputs to 'dist' directory when using Metro bundler
 const webBuildPath = path.join(__dirname, "..", "dist");
-app.use(express.static(webBuildPath));
+app.use(express.static(webBuildPath, {
+  setHeaders: (res, path) => {
+    // Disable caching for HTML files to ensure users get the latest version
+    if (path.endsWith('.html')) {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+    }
+  }
+}));
 
 app.use(
   cors({
@@ -378,6 +387,9 @@ app.get("/health", (req, res) => {
 
 // Serve index.html for all non-API routes (SPA fallback)
 app.get("*", (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
   res.sendFile(path.join(webBuildPath, "index.html"));
 });
 
