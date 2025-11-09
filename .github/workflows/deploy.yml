@@ -45,7 +45,7 @@ jobs:
             docker rm my-app || true
             docker run -d --name my-app \
               -p 3000:3000 \
-              -e OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }} \
-              -e FIREBASE_SERVICE_ACCOUNT=${{ secrets.FIREBASE_SERVICE_ACCOUNT }} \
-              -e FIREBASE_DATABASE_URL=${{ secrets.FIREBASE_DATABASE_URL }} \
+              -e OPENAI_API_KEY='${{ secrets.OPENAI_API_KEY }}' \
+              -e FIREBASE_SERVICE_ACCOUNT='${{ secrets.FIREBASE_SERVICE_ACCOUNT }}' \
+              -e FIREBASE_DATABASE_URL='${{ secrets.FIREBASE_DATABASE_URL }}' \
               $IMAGE_NAME
