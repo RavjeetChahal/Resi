@@ -1,0 +1,11 @@
+node_modules
+npm-debug.log
+.expo
+.expo-shared
+.git
+.gitignore
+README.md
+.DS_Store
+.tmp
+web-build
+dist
