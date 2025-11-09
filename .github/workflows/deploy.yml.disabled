@@ -28,7 +28,16 @@ jobs:
         run: |
           REPO_LOWER=$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]')
           IMAGE_NAME=ghcr.io/$REPO_LOWER/my-app:latest
-          docker build --no-cache -t $IMAGE_NAME .
+          docker build --no-cache \
+            --build-arg EXPO_PUBLIC_API_BASE_URL="${{ secrets.EXPO_PUBLIC_API_BASE_URL }}" \
+            --build-arg EXPO_PUBLIC_FIREBASE_API_KEY="${{ secrets.EXPO_PUBLIC_FIREBASE_API_KEY }}" \
+            --build-arg EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN="${{ secrets.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN }}" \
+            --build-arg EXPO_PUBLIC_FIREBASE_PROJECT_ID="${{ secrets.EXPO_PUBLIC_FIREBASE_PROJECT_ID }}" \
+            --build-arg EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET="${{ secrets.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET }}" \
+            --build-arg EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID="${{ secrets.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID }}" \
+            --build-arg EXPO_PUBLIC_FIREBASE_APP_ID="${{ secrets.EXPO_PUBLIC_FIREBASE_APP_ID }}" \
+            --build-arg EXPO_PUBLIC_FIREBASE_DATABASE_URL="${{ secrets.EXPO_PUBLIC_FIREBASE_DATABASE_URL }}" \
+            -t $IMAGE_NAME .
           docker push $IMAGE_NAME
 
       - name: Deploy to EC2
