@@ -26,7 +26,8 @@ jobs:
 
       - name: Build and push Docker image
         run: |
-          IMAGE_NAME=ghcr.io/${{ github.repository }}/my-app:latest
+          REPO_LOWER=$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]')
+          IMAGE_NAME=ghcr.io/$REPO_LOWER/my-app:latest
           docker build -t $IMAGE_NAME .
           docker push $IMAGE_NAME
 
@@ -37,7 +38,8 @@ jobs:
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
-            IMAGE_NAME=ghcr.io/${{ github.repository }}/my-app:latest
+            REPO_LOWER=$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]')
+            IMAGE_NAME=ghcr.io/$REPO_LOWER/my-app:latest
             docker pull $IMAGE_NAME
             docker stop my-app || true
             docker rm my-app || true
