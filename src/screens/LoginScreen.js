@@ -8,7 +8,8 @@ import {
   TouchableOpacity,
   Alert,
 } from "react-native";
-import { colors } from "../theme/colors";
+import { LinearGradient } from "expo-linear-gradient";
+import { colors, gradients, shadows } from "../theme/colors";
 import { useAuth } from "../context/AuthContext";
 
 const LoginScreen = ({ navigation }) => {
@@ -148,52 +149,73 @@ const LoginScreen = ({ navigation }) => {
 
   return (
     <SafeAreaView style={styles.safeArea}>
+      <LinearGradient
+        colors={gradients.hero}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.heroOverlay}
+      />
       <View style={styles.container}>
-        <View style={styles.header}>
-          <Text style={styles.eyebrow}>MoveMate</Text>
-          <Text style={styles.title}>Welcome to MoveMate</Text>
+        <View style={styles.copyColumn}>
+          <Text style={styles.kicker}>MoveMate Access</Text>
+          <Text style={styles.title}>Sign in with your campus credentials</Text>
           <Text style={styles.subtitle}>
-            Enter your email and password to sign in or create a new account.
+            Secure voice reporting for residents, plus real-time dashboards for
+            your team. Use your campus email to continue.
           </Text>
         </View>
 
-        <TextInput
-          style={styles.input}
-          placeholder="Email"
-          autoCapitalize="none"
-          keyboardType="email-address"
-          value={email}
-          onChangeText={setEmail}
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Password"
-          secureTextEntry
-          value={password}
-          onChangeText={setPassword}
-        />
+        <View style={styles.panel}>
+          <View style={styles.panelHeader}>
+            <Text style={styles.panelTitle}>
+              {role ? `Continue as ${role}` : "Select a role first"}
+            </Text>
+            <TouchableOpacity onPress={() => navigation.replace("RoleSelect")}>
+              <Text style={styles.switchRole}>Change role</Text>
+            </TouchableOpacity>
+          </View>
 
-        <TouchableOpacity
-          style={[styles.loginButton, loading && { opacity: 0.6 }]}
-          onPress={() => {
-            console.log("[LoginScreen] Button pressed");
-            handleLogin();
-          }}
-          disabled={loading}
-        >
-          <Text style={styles.loginButtonText}>
-            {loading ? "Please wait..." : "Continue"}
-          </Text>
-        </TouchableOpacity>
+          <View style={styles.fieldStack}>
+            <Text style={styles.label}>Campus email</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="you@umass.edu"
+              autoCapitalize="none"
+              keyboardType="email-address"
+              value={email}
+              onChangeText={setEmail}
+              placeholderTextColor="rgba(99,102,241,0.6)"
+            />
+          </View>
 
-        <TouchableOpacity
-          style={{ alignSelf: "center", marginTop: 12 }}
-          onPress={() => navigation.replace("RoleSelect")}
-        >
-          <Text style={{ color: colors.primary, fontWeight: "600" }}>
-            Choose a different role
+          <View style={styles.fieldStack}>
+            <Text style={styles.label}>Password</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="••••••••"
+              secureTextEntry
+              value={password}
+              onChangeText={setPassword}
+              placeholderTextColor="rgba(99,102,241,0.6)"
+            />
+          </View>
+
+          <TouchableOpacity
+            style={[styles.loginButton, loading && { opacity: 0.7 }]}
+            onPress={() => {
+              console.log("[LoginScreen] Button pressed");
+              handleLogin();
+            }}
+            disabled={loading}
+          >
+            <Text style={styles.loginButtonText}>
+              {loading ? "Signing you in…" : "Continue"}
+            </Text>
+          </TouchableOpacity>
+          <Text style={styles.disclaimer}>
+            By continuing you agree to MoveMate’s community guidelines.
           </Text>
-        </TouchableOpacity>
+        </View>
       </View>
     </SafeAreaView>
   );
@@ -205,55 +227,106 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: colors.background,
+    position: "relative",
   },
   container: {
     flex: 1,
-    paddingHorizontal: 24,
-    paddingTop: 32,
-    gap: 28,
+    paddingHorizontal: 32,
+    paddingVertical: 40,
+    gap: 32,
+    justifyContent: "center",
   },
-  header: {
-    gap: 12,
+  heroOverlay: {
+    position: "absolute",
+    top: -220,
+    left: -140,
+    right: -120,
+    height: 420,
+    opacity: 0.35,
   },
-  eyebrow: {
+  copyColumn: {
+    maxWidth: 520,
+    gap: 16,
+  },
+  kicker: {
     fontSize: 14,
     fontWeight: "700",
-    color: colors.primary,
-    letterSpacing: 1.2,
+    color: colors.primaryDark,
+    letterSpacing: 1.6,
+    textTransform: "uppercase",
   },
   title: {
-    fontSize: 28,
+    fontSize: 40,
     fontWeight: "800",
     color: colors.text,
-    lineHeight: 36,
+    lineHeight: 46,
+    letterSpacing: -0.8,
   },
   subtitle: {
-    fontSize: 15,
+    fontSize: 16,
     color: colors.muted,
-    lineHeight: 22,
+    lineHeight: 24,
+  },
+  panel: {
+    backgroundColor: colors.card,
+    borderRadius: 28,
+    padding: 28,
+    gap: 20,
+    borderWidth: 1,
+    borderColor: "rgba(99,102,241,0.14)",
+    ...shadows.card,
+    maxWidth: 440,
+  },
+  panelHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  panelTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: colors.text,
+  },
+  switchRole: {
+    color: colors.primaryDark,
+    fontWeight: "600",
   },
   input: {
     borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 12,
+    borderColor: "rgba(99,102,241,0.18)",
+    borderRadius: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
     fontSize: 16,
-    backgroundColor: "#fff",
+    backgroundColor: colors.surfaceMuted,
+    color: colors.text,
+  },
+  fieldStack: {
+    gap: 8,
+  },
+  label: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: colors.muted,
+    textTransform: "uppercase",
+    letterSpacing: 1,
   },
   loginButton: {
     backgroundColor: colors.primary,
-    borderRadius: 999,
+    borderRadius: 18,
     paddingVertical: 16,
-    paddingHorizontal: 32,
     alignItems: "center",
-    alignSelf: "center",
-    marginTop: 24,
-    minWidth: 200,
+    marginTop: 8,
   },
   loginButtonText: {
     color: "#fff",
     fontWeight: "700",
     fontSize: 16,
+  },
+  disclaimer: {
+    marginTop: 4,
+    fontSize: 12,
+    color: "rgba(100,116,139,0.8)",
+    textAlign: "center",
   },
 });

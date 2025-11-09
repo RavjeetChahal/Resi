@@ -32,6 +32,71 @@ const initFirebase = () => {
   return firebaseApp;
 };
 
+const RA_KEYWORDS = [
+  "roommate",
+  "dispute",
+  "noise",
+  "loud",
+  "music",
+  "party",
+  "alcohol",
+  "medical",
+  "injury",
+  "emergency",
+  "wellness",
+  "behavior",
+  "safety",
+  "dorm",
+  "furniture",
+  "damage",
+];
+
+const MAINTENANCE_KEYWORDS = [
+  "heat",
+  "heating",
+  "hvac",
+  "ac",
+  "air",
+  "water",
+  "leak",
+  "plumbing",
+  "pipe",
+  "electrical",
+  "outlet",
+  "light",
+  "bulb",
+  "power",
+  "appliance",
+  "laundry",
+  "trash",
+  "mold",
+  "pest",
+];
+
+const determineTicketTeam = (payload = {}) => {
+  if (payload.team) {
+    return payload.team;
+  }
+
+  const category = (payload.category || "").toLowerCase();
+  const text = `${payload.issue_type || payload.issueType || ""} ${
+    payload.summary || ""
+  }`.toLowerCase();
+
+  const matches = (keywords) =>
+    keywords.some((keyword) => text.includes(keyword));
+
+  if (matches(RA_KEYWORDS) || category === "resident life") {
+    return "ra";
+  }
+
+  if (matches(MAINTENANCE_KEYWORDS) || category === "maintenance") {
+    return "maintenance";
+  }
+
+  return "ra";
+};
+
 const openaiClient = () => {
   if (!process.env.OPENAI_API_KEY) {
     throw new Error("OPENAI_API_KEY is not set");
@@ -93,6 +158,7 @@ const persistTicket = async (payload) => {
   const ref = db.ref("tickets").push();
   const ticket = {
     ...payload,
+    team: determineTicketTeam(payload),
     status: "open",
     timestamp: new Date().toISOString(),
   };

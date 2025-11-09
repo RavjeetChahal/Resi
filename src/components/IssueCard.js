@@ -1,5 +1,11 @@
 import React from "react";
-import { Pressable, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import {
+  Pressable,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import { colors, shadows } from "../theme/colors";
 
 const urgencyColors = {
@@ -46,6 +52,12 @@ export const IssueCard = ({ issue, position, onPress, onStatusChange }) => {
   const urgency = issue.urgency || "UNKNOWN";
   const reportedAtLabel = formatTimestamp(issue.reportedAt);
   const showReported = Boolean(reportedAtLabel);
+  const team =
+    issue.team === "maintenance"
+      ? "Maintenance"
+      : issue.team === "ra"
+      ? "Resident Life"
+      : "General";
 
   return (
     <Pressable
@@ -57,11 +69,27 @@ export const IssueCard = ({ issue, position, onPress, onStatusChange }) => {
           <Text style={styles.positionLabel}>
             {typeof position === "number" ? `#${position}` : displayId}
           </Text>
+          <View
+            style={[
+              styles.teamPill,
+              issue.team === "maintenance"
+                ? styles.teamMaintenance
+                : issue.team === "ra"
+                ? styles.teamResidentLife
+                : styles.teamGeneral,
+            ]}
+          >
+            <Text style={styles.teamText}>{team}</Text>
+          </View>
         </View>
         <View
           style={[
             styles.badge,
-            { backgroundColor: `${(urgencyColors[urgency] ?? colors.warning)}22` },
+            {
+              backgroundColor: `${
+                urgencyColors[urgency] ?? colors.warning
+              }22`,
+            },
           ]}
         >
           <Text
@@ -133,16 +161,16 @@ export const IssueCard = ({ issue, position, onPress, onStatusChange }) => {
 const styles = StyleSheet.create({
   container: {
     backgroundColor: colors.card,
-    borderRadius: 16,
+    borderRadius: 22,
     padding: 18,
     gap: 12,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: "rgba(99,102,241,0.12)",
     ...shadows.card,
   },
   pressed: {
     transform: [{ scale: 0.99 }],
-    opacity: 0.94,
+    opacity: 0.92,
   },
   header: {
     flexDirection: "row",
@@ -159,6 +187,25 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: colors.text,
   },
+  teamPill: {
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+  },
+  teamMaintenance: {
+    backgroundColor: "rgba(99,102,241,0.12)",
+  },
+  teamResidentLife: {
+    backgroundColor: "rgba(20,184,166,0.12)",
+  },
+  teamGeneral: {
+    backgroundColor: "rgba(148,163,184,0.16)",
+  },
+  teamText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: colors.text,
+  },
   badge: {
     borderRadius: 999,
     paddingHorizontal: 10,
@@ -170,7 +217,7 @@ const styles = StyleSheet.create({
   },
   summary: {
     fontSize: 17,
-    fontWeight: "600",
+    fontWeight: "700",
     color: colors.text,
     lineHeight: 24,
   },
@@ -178,6 +225,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+    marginTop: 4,
   },
   metaLabel: {
     fontSize: 13,
@@ -185,12 +233,13 @@ const styles = StyleSheet.create({
     color: colors.muted,
   },
   metaText: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: "500",
     color: colors.text,
   },
   statusSection: {
-    gap: 8,
+    gap: 6,
+    marginTop: 8,
   },
   chipsRow: {
     flexDirection: "row",
@@ -199,15 +248,13 @@ const styles = StyleSheet.create({
   },
   statusChip: {
     borderRadius: 999,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.card,
+    borderWidth: 0,
+    backgroundColor: colors.surfaceMuted,
     paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingVertical: 7,
   },
   statusChipActive: {
-    borderColor: colors.primary,
-    backgroundColor: `${colors.primary}16`,
+    backgroundColor: "rgba(99,102,241,0.18)",
   },
   statusChipText: {
     fontSize: 13,
@@ -215,6 +262,6 @@ const styles = StyleSheet.create({
     color: colors.muted,
   },
   statusChipTextActive: {
-    color: colors.primary,
+    color: colors.primaryDark,
   },
 });

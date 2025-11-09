@@ -14,7 +14,8 @@ import { useAuth } from "../context/AuthContext";
 import { Audio } from "expo-av";
 import * as FileSystem from "expo-file-system";
 import { transcribeAudio } from "../services/api";
-import { colors } from "../theme/colors";
+import { LinearGradient } from "expo-linear-gradient";
+import { colors, gradients, shadows } from "../theme/colors";
 import { ChatBubble } from "../components/ChatBubble";
 import { getFirebaseDatabase } from "../services/firebase";
 import { ref, push } from "firebase/database";
@@ -33,6 +34,7 @@ const ChatScreen = ({ navigation }) => {
   const mediaRecorderRef = useRef(null);
   const webStreamRef = useRef(null);
   const webChunksRef = useRef([]);
+  const [speakingMessageId, setSpeakingMessageId] = useState(null);
   const conversationIdRef = useRef(
     conversationState.conversationId || `conv-${Date.now()}`
   );
@@ -291,21 +293,19 @@ const ChatScreen = ({ navigation }) => {
       }
       
       // Add messages to conversation context
-      const newMessages = [
-        ...messages,
-        {
-          id: `msg-${messages.length + 1}`,
-          sender: "Resident",
-          text: transcriptText,
-          timestamp: Date.now(),
-        },
-        {
-          id: `msg-${messages.length + 2}`,
-          sender: "MoveMate",
-          text: response?.reply || "Thanks! We'll get back to you soon.",
-          timestamp: Date.now(),
-        },
-      ];
+      const residentMessage = {
+        id: `msg-${messages.length + 1}`,
+        sender: "Resident",
+        text: transcriptText,
+        timestamp: Date.now(),
+      };
+      const aiMessage = {
+        id: `msg-${messages.length + 2}`,
+        sender: "MoveMate",
+        text: response?.reply || "Thanks! We'll get back to you soon.",
+        timestamp: Date.now(),
+      };
+      const newMessages = [...messages, residentMessage, aiMessage];
       updateConversationState({ messages: newMessages });
       // Store ticket in Firebase ONLY if schema is complete (needs_more_info = false)
       if (
@@ -334,7 +334,9 @@ const ChatScreen = ({ navigation }) => {
       }
 
       // Play the TTS audio reply if the server returned it
+      const activeMessageId = aiMessage.id;
       if (response?.audio?.data) {
+        setSpeakingMessageId(activeMessageId);
         const contentType = response.audio.contentType || "audio/mpeg";
         const base64 = response.audio.data;
         try {
@@ -361,6 +363,10 @@ const ChatScreen = ({ navigation }) => {
             audioEl.onended = () => {
               URL.revokeObjectURL(audioUrl);
               log("TTS audio playback completed");
+              setSpeakingMessageId(null);
+            };
+            audioEl.onerror = () => {
+              setSpeakingMessageId(null);
             };
           } else {
             // Native: write the base64 to a temp file and play using expo-av
@@ -385,6 +391,7 @@ const ChatScreen = ({ navigation }) => {
                   await FileSystem.deleteAsync(fileUri, { idempotent: true });
                   log("TTS temp file deleted");
                 } catch (e) {}
+                setSpeakingMessageId(null);
               }
             });
           }
@@ -392,9 +399,11 @@ const ChatScreen = ({ navigation }) => {
           console.warn("Failed to play audio response", playbackError);
           setError("Audio playback failed. Try again or check your device.");
           log("TTS playback error", playbackError);
+          setSpeakingMessageId(null);
         }
       } else {
         log("No audio data returned from backend");
+        setSpeakingMessageId(null);
       }
     } catch (err) {
       setError("Upload failed. Try again.");
@@ -462,10 +471,11 @@ const ChatScreen = ({ navigation }) => {
     log("Signing out user from ChatScreen");
     const newConversationId = `conv-${Date.now()}`;
     conversationIdRef.current = newConversationId;
-    updateConversationState({ 
-      messages: [], 
-      conversationId: newConversationId 
+    updateConversationState({
+      messages: [],
+      conversationId: newConversationId,
     }); // Clear messages and reset conversation ID on logout
+    setSpeakingMessageId(null);
     await logout();
     // Reset navigation stack to RoleSelect screen
     navigation.dispatch(
@@ -481,77 +491,94 @@ const ChatScreen = ({ navigation }) => {
     const newConversationId = `conv-${Date.now()}`;
     conversationIdRef.current = newConversationId;
     // Clear messages and reset conversation ID when user leaves chat
-    updateConversationState({ 
-      messages: [], 
-      conversationId: newConversationId 
+    updateConversationState({
+      messages: [],
+      conversationId: newConversationId,
     });
+    setSpeakingMessageId(null);
     navigation.goBack();
   };
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={styles.header}>
+      <LinearGradient
+        colors={gradients.hero}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.heroOverlay}
+      />
+      <View style={styles.headerRow}>
         <TouchableOpacity
           accessibilityLabel="Back to Home"
           testID="back-from-chat"
-          style={styles.backButton}
+          style={styles.headerButton}
           onPress={handleBackPress}
         >
-          <Text style={styles.backText}>{"< Back"}</Text>
+          <Text style={styles.headerButtonText}>Back</Text>
         </TouchableOpacity>
-        <Text style={styles.title}>New Chat</Text>
+        <Text style={styles.headerTitle}>MoveMate Voice</Text>
         <TouchableOpacity
           onPress={handleLogout}
-          style={styles.logoutButton}
+          style={styles.headerButtonDark}
           accessibilityLabel="Sign out"
         >
-          <Text style={styles.logoutText}>Sign out</Text>
+          <Text style={styles.headerButtonDarkText}>Sign out</Text>
         </TouchableOpacity>
       </View>
       <View style={styles.container}>
-        {messages.length === 0 ? (
-          <Text style={styles.emptyText}>
-            No messages yet. Start a conversation!
+        <View style={styles.chatIntro}>
+          <Text style={styles.chatKicker}>Start a fresh report</Text>
+          <Text style={styles.chatHeadline}>
+            Tell us what’s happening in your space
           </Text>
-        ) : (
-          <FlatList
-            data={messages}
-            keyExtractor={(item) => item.id?.toString()}
-            renderItem={({ item }) => <ChatBubble {...item} />}
-            contentContainerStyle={styles.chatList}
-          />
-        )}
-        <View style={{ marginTop: 24 }}>
+          <Text style={styles.chatSubhead}>
+            When you speak, MoveMate transcribes, summarizes, and routes the
+            request to the right campus team instantly.
+          </Text>
+        </View>
+
+        <View style={styles.chatSurface}>
+          {messages.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyTitle}>You haven’t said anything yet</Text>
+              <Text style={styles.emptyText}>
+                Tap the mic below and share what’s going on. We’ll take it from
+                there.
+              </Text>
+            </View>
+          ) : (
+            <FlatList
+              data={messages}
+              keyExtractor={(item) => item.id?.toString()}
+              renderItem={({ item }) => (
+                <ChatBubble
+                  {...item}
+                  isSpeaking={item.id === speakingMessageId}
+                />
+              )}
+              contentContainerStyle={styles.chatList}
+              showsVerticalScrollIndicator={false}
+            />
+          )}
+        </View>
+
+        <View style={styles.actions}>
           <TouchableOpacity
             testID="mic-button"
             accessibilityLabel="Start voice recording"
-            style={{
-              backgroundColor: isRecording ? colors.danger : colors.primary,
-              borderRadius: 999,
-              paddingVertical: 16,
-              paddingHorizontal: 32,
-              alignItems: "center",
-              alignSelf: "center",
-              opacity: isProcessing ? 0.6 : 1,
-            }}
+            style={[
+              styles.recordButton,
+              isRecording && styles.recordButtonActive,
+              isProcessing && { opacity: 0.7 },
+            ]}
             onPress={handleMicPress}
             disabled={isProcessing}
           >
-            <Text style={{ color: "#fff", fontWeight: "700", fontSize: 16 }}>
+            <Text style={styles.recordButtonText}>
               {isRecording ? "Stop & Submit" : "Start Voice Report"}
             </Text>
           </TouchableOpacity>
-          {error ? (
-            <Text
-              style={{
-                color: colors.danger,
-                marginTop: 12,
-                textAlign: "center",
-              }}
-            >
-              {error}
-            </Text>
-          ) : null}
+          {error ? <Text style={styles.errorText}>{error}</Text> : null}
         </View>
       </View>
     </SafeAreaView>
@@ -563,56 +590,127 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
-  header: {
+  heroOverlay: {
+    position: "absolute",
+    top: -240,
+    left: -160,
+    right: -140,
+    height: 420,
+    opacity: 0.28,
+  },
+  headerRow: {
     flexDirection: "row",
     alignItems: "center",
-    padding: 16,
-    borderBottomWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.card,
+    justifyContent: "space-between",
+    paddingHorizontal: 28,
+    paddingTop: 20,
   },
-  backButton: {
-    marginRight: 12,
-    padding: 8,
-    borderRadius: 8,
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.border,
+  headerButton: {
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+    borderRadius: 18,
+    backgroundColor: "rgba(99,102,241,0.12)",
   },
-  backText: {
-    color: colors.primary,
+  headerButtonText: {
+    color: colors.primaryDark,
     fontWeight: "600",
+    letterSpacing: 0.4,
   },
-  title: {
-    fontSize: 20,
+  headerTitle: {
+    fontSize: 16,
     fontWeight: "700",
-    color: colors.primary,
-    flex: 1,
+    color: colors.text,
   },
-  logoutButton: {
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: "#FFFFFFAA",
+  headerButtonDark: {
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+    borderRadius: 18,
+    backgroundColor: "rgba(15,23,42,0.78)",
   },
-  logoutText: {
-    fontSize: 13,
-    color: colors.muted,
+  headerButtonDarkText: {
+    color: "#E2E8FE",
+    fontWeight: "600",
   },
   container: {
     flex: 1,
+    paddingHorizontal: 28,
+    paddingTop: 24,
+    paddingBottom: 40,
+    gap: 24,
+  },
+  chatIntro: {
+    gap: 12,
+  },
+  chatKicker: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: colors.primaryDark,
+    letterSpacing: 1.4,
+    textTransform: "uppercase",
+  },
+  chatHeadline: {
+    fontSize: 30,
+    fontWeight: "800",
+    color: colors.text,
+    letterSpacing: -0.5,
+  },
+  chatSubhead: {
+    fontSize: 15,
+    color: colors.muted,
+    lineHeight: 22,
+  },
+  chatSurface: {
+    flex: 1,
+    borderRadius: 28,
     padding: 24,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: "rgba(99,102,241,0.12)",
+    ...shadows.card,
   },
   chatList: {
-    flexGrow: 1,
-    marginBottom: 16,
+    paddingVertical: 8,
+  },
+  emptyState: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+  },
+  emptyTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: colors.text,
   },
   emptyText: {
-    textAlign: "center",
+    fontSize: 15,
     color: colors.muted,
-    marginTop: 32,
+    textAlign: "center",
+    maxWidth: 280,
+  },
+  actions: {
+    alignItems: "center",
+    gap: 12,
+  },
+  recordButton: {
+    borderRadius: 20,
+    paddingVertical: 18,
+    paddingHorizontal: 48,
+    backgroundColor: colors.primary,
+    ...shadows.card,
+  },
+  recordButtonActive: {
+    backgroundColor: colors.danger,
+  },
+  recordButtonText: {
+    color: "#fff",
+    fontWeight: "700",
+    fontSize: 16,
+    letterSpacing: 0.3,
+  },
+  errorText: {
+    color: colors.danger,
+    textAlign: "center",
   },
 });
 

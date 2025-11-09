@@ -21,8 +21,8 @@ import { StatusBar } from "expo-status-bar";
 import { Audio } from "expo-av";
 import * as FileSystem from "expo-file-system/legacy";
 import { ChatBubble } from "../components/ChatBubble";
-import { MicButton } from "../components/MicButton";
-import { colors } from "../theme/colors";
+import { LinearGradient } from "expo-linear-gradient";
+import { colors, gradients, shadows } from "../theme/colors";
 import { mockConversation } from "../assets/data/issues";
 import { useAuth } from "../context/AuthContext";
 import { getFirebaseDatabase } from "../services/firebase";
@@ -596,14 +596,20 @@ const HomeScreen = ({ navigation }) => {
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar style="dark" />
+      <LinearGradient
+        colors={gradients.hero}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.heroOverlay}
+      />
       <View style={styles.container}>
         <View style={styles.header}>
           <View>
             <Text style={styles.eyebrow}>{greeting}</Text>
-            <Text style={styles.title}>Your Requests</Text>
+            <Text style={styles.title}>Your Voice Reports</Text>
             <Text style={styles.subtitle}>
-              Here are your previous requests. Tap any to view details or start
-              a new chat.
+              Review past submissions and launch a new voice report whenever you
+              spot an issue in your hall.
             </Text>
           </View>
           <TouchableOpacity onPress={handleLogout} style={styles.logoutButton}>
@@ -628,28 +634,59 @@ const HomeScreen = ({ navigation }) => {
                   item.queuePosition && Number(item.queuePosition) > 0
                     ? `#${item.queuePosition}`
                     : "Assigning…";
+                const teamLabel =
+                  item.team === "maintenance"
+                    ? "Maintenance"
+                    : item.team === "ra"
+                    ? "Resident Life"
+                    : item.category || "General";
 
                 return (
                   <View style={styles.ticketCard}>
-                    <Text style={styles.ticketId}>Request #{item.id}</Text>
-                    <Text style={styles.ticketSummary}>{item.summary}</Text>
-                    <Text style={styles.ticketMeta}>
-                      Status: {item.status || "Open"}
+                    <View style={styles.ticketHeader}>
+                      <View>
+                        <Text style={styles.ticketLabel}>Request</Text>
+                        <Text style={styles.ticketId}>#{item.id}</Text>
+                      </View>
+                      {showQueue && (
+                        <View style={styles.queuePill}>
+                          <Text style={styles.queuePillText}>
+                            Queue {queueLabel}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+                    <Text style={styles.ticketSummary}>
+                      {item.summary || item.transcript}
                     </Text>
-                    <Text style={styles.ticketMeta}>
-                      Urgency: {item.urgency || "Unknown"}
-                    </Text>
-                    <Text style={styles.ticketMeta}>
-                      Location: {item.location || "Unknown"}
-                    </Text>
-                    {showQueue && (
-                      <Text style={styles.ticketMeta}>
-                        Queue position: {queueLabel}
+                    <View style={styles.ticketMetaRow}>
+                      <Text style={styles.ticketMetaLabel}>Status</Text>
+                      <Text style={styles.ticketMetaValue}>
+                        {item.status || "Open"}
                       </Text>
-                    )}
-                    <Text style={styles.ticketMeta}>
-                      Reported: {formatDisplayDate(item.reportedAt)}
-                    </Text>
+                    </View>
+                    <View style={styles.ticketMetaRow}>
+                      <Text style={styles.ticketMetaLabel}>Urgency</Text>
+                      <Text style={styles.ticketMetaValue}>
+                        {item.urgency || "Unknown"}
+                      </Text>
+                    </View>
+                    <View style={styles.ticketMetaRow}>
+                      <Text style={styles.ticketMetaLabel}>Location</Text>
+                      <Text style={styles.ticketMetaValue}>
+                        {item.location || "Unknown"}
+                      </Text>
+                    </View>
+                    <View style={styles.ticketMetaRow}>
+                      <Text style={styles.ticketMetaLabel}>Routed to</Text>
+                      <Text style={styles.ticketMetaValue}>{teamLabel}</Text>
+                    </View>
+                    <View style={styles.ticketMetaRow}>
+                      <Text style={styles.ticketMetaLabel}>Reported</Text>
+                      <Text style={styles.ticketMetaValue}>
+                        {formatDisplayDate(item.reportedAt)}
+                      </Text>
+                    </View>
                   </View>
                 );
               }}
@@ -694,77 +731,124 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
+  heroOverlay: {
+    position: "absolute",
+    top: -220,
+    left: -140,
+    right: -140,
+    height: 400,
+    opacity: 0.32,
+  },
   container: {
     flex: 1,
-    paddingHorizontal: 24,
-    paddingTop: 16,
+    paddingHorizontal: 28,
+    paddingTop: 40,
+    paddingBottom: 32,
   },
   header: {
-    marginBottom: 24,
+    position: "relative",
+    borderRadius: 28,
+    padding: 28,
+    backgroundColor: "rgba(15,23,42,0.88)",
+    marginBottom: 32,
+    overflow: "hidden",
   },
   eyebrow: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: colors.primary,
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#E0E7FF",
+    letterSpacing: 1.4,
+    textTransform: "uppercase",
   },
   title: {
-    fontSize: 26,
+    fontSize: 34,
     fontWeight: "800",
-    color: colors.text,
-    marginTop: 6,
+    color: "#F8FAFF",
+    marginTop: 8,
+    letterSpacing: -0.6,
   },
   subtitle: {
     fontSize: 15,
-    color: colors.muted,
-    marginTop: 8,
-  },
-  dashboardLink: {
+    color: "rgba(241,245,255,0.82)",
+    lineHeight: 22,
     marginTop: 12,
-  },
-  dashboardLinkText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: colors.primary,
+    maxWidth: 520,
   },
   logoutButton: {
     position: "absolute",
-    right: 0,
-    top: 0,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
+    top: 22,
+    right: 24,
+    paddingVertical: 8,
+    paddingHorizontal: 18,
     borderRadius: 999,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: "#FFFFFFAA",
+    backgroundColor: "rgba(15,23,42,0.68)",
   },
   logoutText: {
     fontSize: 13,
-    color: colors.muted,
+    color: "#E2E8FE",
+    fontWeight: "600",
   },
   chatList: {
-    flexGrow: 1,
-    paddingBottom: 16,
+    paddingVertical: 8,
   },
   ticketCard: {
     backgroundColor: colors.card,
-    borderRadius: 12,
+    borderRadius: 24,
     borderWidth: 1,
-    borderColor: colors.border,
-    padding: 16,
-    marginBottom: 16,
-    gap: 4,
+    borderColor: "rgba(99,102,241,0.12)",
+    padding: 20,
+    marginBottom: 20,
+    gap: 12,
+    ...shadows.card,
+  },
+  ticketHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  ticketLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: colors.muted,
+    textTransform: "uppercase",
+    letterSpacing: 1,
   },
   ticketId: {
+    fontSize: 18,
     fontWeight: "700",
-    color: colors.primary,
+    color: colors.text,
+  },
+  queuePill: {
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    backgroundColor: "rgba(99,102,241,0.12)",
+  },
+  queuePillText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: colors.primaryDark,
   },
   ticketSummary: {
     color: colors.text,
     fontWeight: "600",
+    fontSize: 16,
+    lineHeight: 24,
   },
-  ticketMeta: {
+  ticketMetaRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  ticketMetaLabel: {
     color: colors.muted,
     fontSize: 13,
+    fontWeight: "600",
+  },
+  ticketMetaValue: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: "600",
   },
   transcriptContainer: {
     backgroundColor: colors.card,

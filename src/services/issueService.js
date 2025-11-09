@@ -3,6 +3,47 @@ import { get, onValue, ref, update } from "firebase/database";
 import { getFirebaseDatabase } from "./firebase";
 import { mockIssues } from "../assets/data/issues";
 
+const RA_KEYWORDS = [
+  "roommate",
+  "dispute",
+  "noise",
+  "loud",
+  "music",
+  "party",
+  "alcohol",
+  "medical",
+  "injury",
+  "emergency",
+  "wellness",
+  "behavior",
+  "safety",
+  "dorm",
+  "furniture",
+  "damage",
+];
+
+const MAINTENANCE_KEYWORDS = [
+  "heat",
+  "heating",
+  "hvac",
+  "ac",
+  "air",
+  "water",
+  "leak",
+  "plumbing",
+  "pipe",
+  "electrical",
+  "outlet",
+  "light",
+  "bulb",
+  "power",
+  "appliance",
+  "laundry",
+  "trash",
+  "mold",
+  "pest",
+];
+
 const normalizeStatus = (value) => {
   if (!value) return "open";
   return value.toString().trim().toLowerCase().replace(/\s+/g, "_");
@@ -32,6 +73,30 @@ const parseDateValue = (value) => {
     return null;
   }
   return date.toISOString();
+};
+
+const determineIssueTeam = (payload = {}) => {
+  if (payload.team) {
+    return payload.team;
+  }
+
+  const category = (payload.category || "").toLowerCase();
+  const text = `${payload.issue_type || payload.issueType || ""} ${
+    payload.summary || ""
+  }`.toLowerCase();
+
+  const matches = (keywords) =>
+    keywords.some((keyword) => text.includes(keyword));
+
+  if (matches(RA_KEYWORDS) || category === "resident life") {
+    return "ra";
+  }
+
+  if (matches(MAINTENANCE_KEYWORDS) || category === "maintenance") {
+    return "maintenance";
+  }
+
+  return "ra";
 };
 
 const normalizeIssue = (id, payload) => {
@@ -65,6 +130,7 @@ const normalizeIssue = (id, payload) => {
     reportedAt,
     transcript: payload.transcript || null,
     closedAt,
+    team: determineIssueTeam(payload),
     queuePosition: payload.queuePosition || payload.queue_position || null,
     raw: payload,
   };

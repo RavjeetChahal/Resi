@@ -6,8 +6,9 @@ import {
   View,
   TouchableOpacity,
 } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
 import { RoleCard } from "../components/RoleCard";
-import { colors } from "../theme/colors";
+import { colors, gradients } from "../theme/colors";
 import { useAuth } from "../context/AuthContext";
 
 const roleOptions = [
@@ -44,12 +45,19 @@ const RoleSelectScreen = ({ navigation }) => {
 
   return (
     <SafeAreaView style={styles.safeArea}>
+      <LinearGradient
+        colors={gradients.hero}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.heroOverlay}
+      />
       <View style={styles.container}>
         <View style={styles.header}>
-          <Text style={styles.eyebrow}>MoveMate</Text>
-          <Text style={styles.title}>Choose your role</Text>
+          <Text style={styles.eyebrow}>Set your perspective</Text>
+          <Text style={styles.title}>How will you use MoveMate?</Text>
           <Text style={styles.subtitle}>
-            Select how you want to use MoveMate. You’ll sign in next.
+            Residents submit voice reports. Maintenance and RA teams triage and
+            act instantly. Pick the workspace that matches you.
           </Text>
         </View>
 
@@ -84,42 +92,54 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: colors.background,
+    position: "relative",
   },
   container: {
     flex: 1,
-    paddingHorizontal: 24,
-    paddingTop: 32,
+    paddingHorizontal: 28,
+    paddingTop: 48,
+    paddingBottom: 32,
     gap: 24,
   },
+  heroOverlay: {
+    position: "absolute",
+    top: -260,
+    left: -160,
+    right: -160,
+    height: 480,
+    opacity: 0.32,
+  },
   header: {
-    gap: 10,
+    gap: 16,
+    maxWidth: 620,
   },
   eyebrow: {
     fontSize: 14,
     fontWeight: "700",
-    color: colors.primary,
-    letterSpacing: 1.2,
+    color: colors.primaryDark,
+    letterSpacing: 1.6,
+    textTransform: "uppercase",
   },
   title: {
-    fontSize: 28,
+    fontSize: 42,
     fontWeight: "800",
     color: colors.text,
-    lineHeight: 36,
+    lineHeight: 48,
   },
   subtitle: {
-    fontSize: 15,
+    fontSize: 16,
     color: colors.muted,
-    lineHeight: 22,
+    lineHeight: 24,
   },
   rolesGrid: {
     flex: 1,
     gap: 18,
-    marginTop: 8,
+    marginTop: 16,
   },
   footerLink: {
     alignSelf: "center",
-    paddingVertical: 12,
-    paddingHorizontal: 16,
+    paddingVertical: 16,
+    paddingHorizontal: 18,
   },
   footerText: {
     color: colors.primary,
