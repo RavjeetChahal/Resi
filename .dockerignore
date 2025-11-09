@@ -8,3 +8,4 @@ README.md
 .DS_Store
 .tmp
 web-build
+dist
