@@ -8,6 +8,11 @@ const cleanupConversation = (conversationId) => {
 
 const getConversation = (conversationId) => {
   const conversation = conversations.get(conversationId);
+  console.log("[conversation-manager] getConversation", {
+    conversationId,
+    hasConversation: !!conversation,
+    data: conversation?.data,
+  });
   if (conversation) {
     // Reset timeout
     clearTimeout(conversation.timeoutId);
@@ -21,6 +26,12 @@ const getConversation = (conversationId) => {
 
 const updateConversation = (conversationId, data) => {
   const existing = conversations.get(conversationId);
+  console.log("[conversation-manager] updateConversation", {
+    conversationId,
+    hasExisting: !!existing,
+    existingData: existing?.data,
+    incomingData: data,
+  });
   if (existing) {
     clearTimeout(existing.timeoutId);
   }
@@ -30,10 +41,16 @@ const updateConversation = (conversationId, data) => {
     CONVERSATION_TIMEOUT
   );
 
+  const mergedData = { ...(existing?.data || {}), ...data };
   conversations.set(conversationId, {
-    data: { ...(existing?.data || {}), ...data },
+    data: mergedData,
     timeoutId,
     lastUpdated: new Date().toISOString(),
+  });
+
+  console.log("[conversation-manager] After merge", {
+    conversationId,
+    mergedData,
   });
 
   return conversations.get(conversationId).data;

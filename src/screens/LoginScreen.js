@@ -8,7 +8,6 @@ import {
   TouchableOpacity,
   Alert,
 } from "react-native";
-import { CommonActions } from "@react-navigation/native";
 import { colors } from "../theme/colors";
 import { useAuth } from "../context/AuthContext";
 
@@ -18,13 +17,24 @@ const LoginScreen = ({ navigation }) => {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const hasNavigatedRef = React.useRef(false);
+  const safetyTimeoutRef = React.useRef(null);
 
-  console.log("[LoginScreen] Render", {
+  console.log("[LoginScreen] ===== RENDER =====", {
     hasUser: !!user,
+    userEmail: user?.email,
     hasRole: !!role,
+    role,
     loading,
     hasNavigated: hasNavigatedRef.current,
   });
+
+  // Track when user changes
+  useEffect(() => {
+    console.log("[LoginScreen] 👤 user changed:", {
+      hasUser: !!user,
+      email: user?.email,
+    });
+  }, [user]);
 
   useEffect(() => {
     console.log("[LoginScreen] Role check useEffect", { role });
@@ -34,6 +44,31 @@ const LoginScreen = ({ navigation }) => {
       navigation.replace("RoleSelect");
     }
   }, [role, navigation]);
+
+  const clearSafetyTimeout = React.useCallback(() => {
+    if (safetyTimeoutRef.current) {
+      console.log("[LoginScreen] Clearing safety timeout");
+      clearTimeout(safetyTimeoutRef.current);
+      safetyTimeoutRef.current = null;
+    }
+  }, []);
+
+  const navigateToTarget = React.useCallback(() => {
+    if (!role) {
+      console.log("[LoginScreen] Cannot navigate - role missing");
+      return;
+    }
+    if (hasNavigatedRef.current) {
+      console.log("[LoginScreen] Navigation already handled, skipping");
+      return;
+    }
+    const targetScreen = role === "resident" ? "Home" : "Dashboard";
+    console.log(`[LoginScreen] Navigating to ${targetScreen}`);
+    hasNavigatedRef.current = true;
+    clearSafetyTimeout();
+    setLoading(false);
+    navigation.replace(targetScreen);
+  }, [role, navigation, clearSafetyTimeout]);
 
   const handleLogin = async () => {
     console.log("[LoginScreen] handleLogin called", {
@@ -61,13 +96,25 @@ const LoginScreen = ({ navigation }) => {
     
     console.log("[LoginScreen] Setting loading to true");
     setLoading(true);
+    console.log("[LoginScreen] Flags set, proceeding with login");
+    
+    clearSafetyTimeout();
+    // Safety timeout: if navigation doesn't happen within 15 seconds, reset loading
+    safetyTimeoutRef.current = setTimeout(() => {
+      console.log("[LoginScreen] Safety timeout: resetting loading after 15s");
+      setLoading(false);
+      hasNavigatedRef.current = false;
+      safetyTimeoutRef.current = null;
+    }, 15000);
+    
     try {
       console.log("[LoginScreen] Attempting login for:", email);
       await login(email, password);
-      console.log("[LoginScreen] Login successful, waiting for auth state update");
-      // Note: loading state will be reset by navigation useEffect
+      console.log("[LoginScreen] Login promise resolved, attempting navigation");
+      navigateToTarget();
     } catch (err) {
       console.error("[LoginScreen] Login failed:", err);
+      clearSafetyTimeout();
       const errorMessage =
         err.message ||
         err.code ||
@@ -78,35 +125,31 @@ const LoginScreen = ({ navigation }) => {
     }
   };
 
-  // Navigate after login if user and role are set
+  // Navigate after login - simply replace to Home/Dashboard
+  // Only navigate if we have an authenticated user and a selected role
   React.useEffect(() => {
     console.log("[LoginScreen] Navigation useEffect", {
       hasUser: !!user,
       hasRole: !!role,
+      loading,
       hasNavigated: hasNavigatedRef.current,
     });
     
-    if (user && role && !hasNavigatedRef.current) {
-      const targetScreen = role === "resident" ? "Home" : "Dashboard";
-      console.log(`[LoginScreen] Conditions met, navigating to ${targetScreen}`);
-      hasNavigatedRef.current = true;
-      console.log("[LoginScreen] Resetting loading to false before navigation");
-      setLoading(false);
-      console.log("[LoginScreen] Dispatching navigation reset");
-      navigation.dispatch(
-        CommonActions.reset({
-          index: 0,
-          routes: [{ name: targetScreen }],
-        })
-      );
+    if (user && role) {
+      if (!hasNavigatedRef.current) {
+        navigateToTarget();
+      } else {
+        console.log("[LoginScreen] Navigation already performed for this session");
+      }
     } else if (!user) {
-      // Reset navigation flag when user logs out
-      console.log("[LoginScreen] User logged out, resetting hasNavigated flag");
+      if (hasNavigatedRef.current) {
+        console.log("[LoginScreen] User logged out, resetting navigation guard");
+      }
       hasNavigatedRef.current = false;
-    } else {
-      console.log("[LoginScreen] Navigation conditions not met");
+      clearSafetyTimeout();
+      setLoading(false);
     }
-  }, [user, role, navigation]);
+  }, [user, role, loading, navigateToTarget, clearSafetyTimeout]);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -137,7 +180,10 @@ const LoginScreen = ({ navigation }) => {
 
         <TouchableOpacity
           style={[styles.loginButton, loading && { opacity: 0.6 }]}
-          onPress={handleLogin}
+          onPress={() => {
+            console.log("[LoginScreen] Button pressed");
+            handleLogin();
+          }}
           disabled={loading}
         >
           <Text style={styles.loginButtonText}>

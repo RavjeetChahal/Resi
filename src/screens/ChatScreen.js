@@ -277,6 +277,9 @@ const ChatScreen = ({ navigation }) => {
       }
       setTranscript(transcriptText);
       log("Transcription succeeded", { transcript: transcriptText });
+      if (response?.context) {
+        console.log("[Voice] Server conversation context", response.context);
+      }
       
       // Add messages to conversation context
       const newMessages = [

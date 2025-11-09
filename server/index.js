@@ -5,6 +5,8 @@ const cors = require("cors");
 const { formidable } = require("formidable");
 const { OpenAI } = require("openai");
 const admin = require("firebase-admin");
+const conversationManager = require("./conversation-manager");
+const { getConversation, updateConversation } = conversationManager;
 require("dotenv").config();
 if (!process.env.OPENAI_API_KEY) {
   console.warn(
@@ -75,36 +77,65 @@ const openaiClient = () => {
 
 const classifyTranscript = async ({ transcript, conversationId }) => {
   const client = openaiClient();
-  const {
-    getConversation,
-    updateConversation,
-  } = require("./conversation-manager");
-
-  const currentState = getConversation(conversationId);
+  try {
+    console.log("[server] Conversation context for prompt", {
+      conversationId,
+      context: contextForPrompt,
+    });
+  } catch (logErr) {
+    console.warn(
+      "[server] Failed to log context for prompt",
+      logErr.message || logErr
+    );
+  }
+  const stateForPrompt = JSON.stringify(contextForPrompt, null, 2);
 
   const systemPrompt = `
 You are MoveMate, an AI assistant that triages dorm and residential life issues.
 You maintain context of the conversation and build a complete understanding of the issue over multiple interactions.
-Always respond in the following JSON format, preserving any previously collected information:
+
+CRITICAL: You MUST preserve all previously collected field values. If a field already has a value in the conversation state and the user doesn't provide new information for that field, you MUST keep the existing value. Never replace collected values with empty strings, "Unknown", or null.
+
+Always respond in the following JSON format:
 {
-  "category": "Maintenance | Resident Life",
-  "issue_type": "Short label for the issue",
-  "location": "Where the issue occurs or "Unknown"",
-  "urgency": "HIGH | MEDIUM | LOW",
-  "summary": "One-sentence summary of the issue",
+  "timestamp": "ISO 8601 timestamp (use existing value from conversation state, or set once at conversation start)",
+  "category": "Maintenance | Resident Life (keep existing if already set)",
+  "issue_type": "Short label for the issue (keep existing if already set)",
+  "location": "UMass campus location like 'John Adams Dorm 716' (keep existing if already set)",
+  "urgency": "HIGH | MEDIUM | LOW (keep existing if already set)",
+  "summary": "One-sentence summary (keep existing if already set)",
   "reply": "Friendly acknowledgement and next steps",
-  "needs_more_info": true/false (whether you need more details to complete the report)
+  "needs_more_info": true/false
 }
 
-Current conversation state:
-${JSON.stringify(currentState, null, 2)}
+Current conversation state (PRESERVE ALL EXISTING VALUES):
+${stateForPrompt}
+
+Category rules:
+- Use \"Maintenance\" for physical issues (plumbing, electrical, HVAC, pests, infrastructure damage, accessibility barriers, etc.).
+- Use \"Resident Life\" for behavioral, community, staffing, programming, policy, and wellbeing concerns.
+- If the report is primarily a personal safety, health, or emergency issue, classify as \"Maintenance\" with HIGH urgency and clearly note the nature of the emergency in the summary so staff can escalate.
 
 Urgency rules:
-- HIGH: water/gas leaks, electrical sparks, fire, medical emergencies, safety threats.
-- MEDIUM: active leaks, repeated noise issues, broken fixtures, pests.
-- LOW: cosmetic damage, general questions, mild discomfort, information requests.
+- HIGH: fire, gas leaks, flooding, electrical shorts, medical or personal safety emergencies, total power loss, inoperative elevator with occupants, or anything that could cause immediate harm.
+- MEDIUM: active but contained leaks, repeated disruptive noise, outages impacting multiple residents, broken fixtures, pests, accessibility impediments, temperature control failures.
+- LOW: cosmetic damage, one-off noise complaints, information requests, minor inconveniences, housekeeping questions, general inquiries.
 
-If any required field is missing or incomplete, set needs_more_info to true and ask for the specific missing details in the reply.
+If any required field is missing or incomplete, set needs_more_info to true and ask for the specific missing details in the reply. When you already have a value for a field and the user does not give new information for that field on the current turn, keep the previously recorded value instead of sending an empty string, null, or placeholder.
+
+Location rules:
+- Only accept UMass Amherst campus locations. Reference the specific residence hall, apartment complex, academic building, dining hall, transportation hub, or outdoor campus space impacted.
+- For residence halls, prefer "<Dorm Name> Dorm <Room/Area>" (e.g., "John Adams Dorm 716") or a clearly named shared area ("John Adams laundry room (basement)"). If the issue affects the entire building, use just the building name (e.g., "John Adams").
+- For non-residence facilities, capture the official facility name and specific area if possible (e.g., "Franklin Dining Commons kitchen", "Integrated Sciences Building lobby").
+- If the resident uses an abbreviation, nickname, or speaks phonetically ("JA 716", "Southwest mailroom"), restate or clarify it into the official building name before saving it.
+- If the resident truly cannot give a room number, capture the best available detail (e.g., building + floor or common area) and explain in the reply what additional detail is needed.
+- If they mention multiple buildings or areas, list each UMass location involved (e.g., "John Adams and John Quincy courtyard") and ensure the summary makes the scope clear.
+- If the user gives an off-campus or clearly invalid location, politely remind them MoveMate only handles UMass Amherst properties and ask them to provide the correct on-campus location before completion.
+
+Timestamp rules:
+- Always include the ISO 8601 timestamp for when this conversation started in the "timestamp" field.
+- Preserve the same timestamp value on every response, even when collecting more details. Do not overwrite it with the current time.
+- If the existing conversation state already contains a timestamp, reuse it. Only set a new timestamp the very first time (when no timestamp has been captured yet) using the supplied conversation start value.
 
 When ALL required fields (category, issue_type, location, urgency, summary) are complete and needs_more_info is false, give a warm goodbye in the reply thanking the user for reporting the issue and letting them know the ticket has been created and the appropriate team will be notified. Make it friendly and reassuring.
 `;
@@ -128,7 +159,22 @@ When ALL required fields (category, issue_type, location, urgency, summary) are 
   }
 
   const classification = JSON.parse(raw);
+  if (!classification.timestamp) {
+    classification.timestamp = conversationStart;
+  }
   updateConversation(conversationId, classification);
+  try {
+    const mergedContext = getConversation(conversationId);
+    console.log("[server] Conversation context updated", {
+      conversationId,
+      context: mergedContext,
+    });
+  } catch (logErr) {
+    console.warn(
+      "[server] Failed to log conversation context",
+      logErr.message || logErr
+    );
+  }
 
   return classification;
 };
@@ -229,11 +275,12 @@ app.post("/api/processInput", (req, res) => {
 
       let classification = null;
       let ticketRecord = null;
+      const conversationId = fields.conversationId?.[0] || `conv-${Date.now()}`;
 
       try {
         classification = await classifyTranscript({
           transcript,
-          conversationId: fields.conversationId?.[0] || `conv-${Date.now()}`,
+          conversationId,
         });
         console.log("[server] Classification complete", classification);
 
@@ -246,6 +293,7 @@ app.post("/api/processInput", (req, res) => {
             location: classification.location,
             urgency: classification.urgency,
             summary: classification.summary,
+            conversation_timestamp: classification.timestamp,
           });
           if (ticketRecord) {
             console.log(
@@ -287,6 +335,7 @@ app.post("/api/processInput", (req, res) => {
           ticket: ticketRecord,
           classification,
           reply,
+          context: getConversation(conversationId),
           audio: {
             data: audioBase64,
             contentType: "audio/mpeg",
@@ -303,6 +352,7 @@ app.post("/api/processInput", (req, res) => {
           ticket: ticketRecord,
           classification,
           reply,
+          context: getConversation(conversationId),
         });
         console.log("[server] Response (text-only) sent to client");
       }
