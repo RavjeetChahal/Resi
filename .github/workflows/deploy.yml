@@ -10,6 +10,14 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Check EC2_HOST secret presence
+        run: |
+          echo "EC2_HOST length: $(echo -n "${{ secrets.EC2_HOST }}" | wc -c)"
+          if [ -z "${{ secrets.EC2_HOST }}" ]; then
+            echo "::error::EC2_HOST is empty"
+            exit 1
+          fi
+
       - name: Deploy to EC2
         uses: appleboy/ssh-action@v1.0.3
         with:
