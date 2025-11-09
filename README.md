@@ -52,7 +52,7 @@ Resi is a voice-driven maintenance and residential life assistant. Students desc
 - 🔐 Role-based Firebase Authentication
 
 ## 🚀 Deployments
-- Render: https://movemate-39ed.onrender.com/
+- Render: https://resi-7125.onrender.com/
 - Amazon EC2: https://rezzy.tech/
 
 ## 👥 Contributors:
