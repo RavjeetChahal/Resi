@@ -256,6 +256,7 @@ const persistTicket = async (payload) => {
   console.log("[server] Payload:", {
     category: payload.category,
     issue_type: payload.issue_type,
+    owner: payload.owner,
   });
 
   const firebase = initFirebase();
@@ -292,7 +293,12 @@ const persistTicket = async (payload) => {
     queuePosition,
     timestamp: new Date().toISOString(),
   };
-  console.log("[server] Saving ticket with queuePosition:", queuePosition);
+  console.log(
+    "[server] Saving ticket with owner:",
+    ticket.owner,
+    "queuePosition:",
+    queuePosition
+  );
   await ref.set(ticket);
   console.log("[server] Ticket saved! ID:", ref.key);
   return { id: ref.key, ...ticket };
@@ -484,9 +490,12 @@ app.post("/api/processInput", (req, res) => {
       let classification = null;
       let ticketRecord = null;
       const conversationId = fields.conversationId?.[0] || `conv-${Date.now()}`;
+      const userId = fields.userId?.[0] || null;
       console.log(
         "[server] Processing request with conversationId:",
-        conversationId
+        conversationId,
+        "userId:",
+        userId
       );
 
       try {
@@ -506,6 +515,7 @@ app.post("/api/processInput", (req, res) => {
             urgency: classification.urgency,
             summary: classification.summary,
             conversation_timestamp: classification.timestamp,
+            owner: userId,
           });
           if (ticketRecord) {
             console.log(

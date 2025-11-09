@@ -318,6 +318,7 @@ const ChatScreen = ({ navigation }) => {
           uri,
           file,
           conversationId: conversationIdRef.current,
+          userId: user?.uid,
         });
         transcriptText = response?.transcript ?? "";
         if (!transcriptText) {

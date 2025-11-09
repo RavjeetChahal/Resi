@@ -432,6 +432,7 @@ const HomeScreen = ({ navigation }) => {
           uri,
           file,
           conversationId: conversationIdRef.current,
+          userId: user?.uid,
         });
         transcriptText = response?.transcript ?? "";
 

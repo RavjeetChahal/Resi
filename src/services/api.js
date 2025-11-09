@@ -108,6 +108,7 @@ export const transcribeAudio = async ({
   mimeType = "audio/m4a",
   onUploadProgress,
   conversationId,
+  userId,
 } = {}) => {
   if (!uri && !file) {
     throw new Error("Recording data is required for transcription.");
@@ -128,6 +129,11 @@ export const transcribeAudio = async ({
 
   // Add conversation ID to track context
   formData.append("conversationId", conversationId || `conv-${Date.now()}`);
+  
+  // Add user ID to identify ticket owner
+  if (userId) {
+    formData.append("userId", userId);
+  }
 
   const deviceInfo = {
     deviceName: Constants.deviceName,
