@@ -15,7 +15,7 @@ import { useAuth } from "../context/AuthContext";
 const LoginScreen = ({ navigation }) => {
   const { role, login, user } = useAuth();
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [password, setPassword] = useState(""); 
   const [loading, setLoading] = useState(false);
   const hasNavigatedRef = React.useRef(false);
 

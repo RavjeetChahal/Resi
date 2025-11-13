@@ -1,0 +1,37 @@
+{
+  "name": "extract_issue_info",
+  "description": "Extract structured issue information from the conversation. Call this function when you have gathered all required information from the user about their issue.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "category": {
+        "type": "string",
+        "enum": ["Maintenance", "Resident Life"],
+        "description": "The category of the issue - Maintenance for facilities/equipment issues, Resident Life for roommate/noise/behavior issues"
+      },
+      "issue_type": {
+        "type": "string",
+        "description": "Short label for the issue (e.g., 'Water Leak', 'Noise Complaint', 'Broken Heater')"
+      },
+      "location": {
+        "type": "string",
+        "description": "Where the issue occurs (e.g., 'Room 201', 'Common Area', 'Bathroom')"
+      },
+      "urgency": {
+        "type": "string",
+        "enum": ["HIGH", "MEDIUM", "LOW"],
+        "description": "HIGH for emergencies (water leaks, electrical sparks, safety threats), MEDIUM for active issues (leaks, broken fixtures, pests), LOW for cosmetic or minor issues"
+      },
+      "summary": {
+        "type": "string",
+        "description": "One-sentence summary of the issue"
+      },
+      "needs_more_info": {
+        "type": "boolean",
+        "description": "Set to false when all required fields are complete. Set to true if you need more information from the user."
+      }
+    },
+    "required": ["category", "issue_type", "location", "urgency", "summary", "needs_more_info"]
+  }
+}
+

@@ -5,9 +5,12 @@ const cors = require("cors");
 const { formidable } = require("formidable");
 const { OpenAI } = require("openai");
 const admin = require("firebase-admin");
+const axios = require("axios");
 const conversationManager = require("./conversation-manager");
+const vapiWebhook = require("./vapi-webhook");
 const { getConversation, updateConversation } = conversationManager;
-require("dotenv").config();
+// Load .env from root directory
+require("dotenv").config({ path: path.join(__dirname, "..", ".env") });
 if (!process.env.OPENAI_API_KEY) {
   console.warn(
     "[server] OPENAI_API_KEY is not set. Whisper transcription will fail."
@@ -88,20 +91,28 @@ app.use(
   })
 );
 
+app.use(express.json()); // Parse JSON bodies for Vapi webhook
 app.use(
   cors({
     origin: (origin, callback) => {
+      // Allow requests with no origin (mobile apps, curl, etc.)
       if (!origin) {
         return callback(null, true);
       }
+      // Allow all origins for development, or check against allowed list
       if (allowedOrigins.includes("*") || allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      // Also allow localhost for web development
+      if (origin.includes("localhost") || origin.includes("127.0.0.1")) {
         return callback(null, true);
       }
       console.warn("[server] Blocked CORS origin", origin);
       return callback(new Error("Not allowed by CORS"));
     },
-    methods: ["POST", "OPTIONS"],
-    allowedHeaders: ["Content-Type"],
+    methods: ["GET", "POST", "OPTIONS", "PUT", "DELETE"],
+    allowedHeaders: ["Content-Type", "Authorization", "Accept"],
+    credentials: true,
   })
 );
 
@@ -592,6 +603,119 @@ app.post("/api/processInput", (req, res) => {
       }
     }
   });
+});
+
+// Vapi webhook endpoint
+app.use("/api", vapiWebhook);
+
+// Endpoint to create Vapi calls
+app.post("/api/vapi/create-call", express.json(), async (req, res) => {
+  try {
+    const { assistantId, userId, conversationId } = req.body;
+    const VAPI_API_KEY = process.env.VAPI_API_KEY;
+    const VAPI_BASE_URL = "https://api.vapi.ai";
+    const VAPI_WEBHOOK_URL =
+      process.env.VAPI_WEBHOOK_URL ||
+      `${req.protocol}://${req.get("host")}/api/vapi/webhook`;
+
+    if (!VAPI_API_KEY) {
+      console.error("[server] VAPI_API_KEY not configured");
+      return res.status(500).json({ error: "VAPI_API_KEY not configured" });
+    }
+
+    const finalAssistantId = assistantId || process.env.VAPI_ASSISTANT_ID;
+    
+    if (!finalAssistantId) {
+      console.error("[server] VAPI_ASSISTANT_ID not configured");
+      return res.status(500).json({ error: "VAPI_ASSISTANT_ID not configured" });
+    }
+
+    console.log("[server] Creating Vapi call", {
+      assistantId: finalAssistantId,
+      userId,
+      conversationId,
+      webhookUrl: VAPI_WEBHOOK_URL,
+      apiKey: VAPI_API_KEY ? `${VAPI_API_KEY.substring(0, 10)}...` : "missing",
+    });
+
+    // Create a call via Vapi API
+    // Vapi API format: assistantId directly, transport provider must be "vapi.websocket"
+    const requestBody = {
+      assistantId: finalAssistantId,
+      transport: {
+        provider: "vapi.websocket",
+        audioFormat: {
+          format: "pcm_s16le",
+          container: "raw",
+          sampleRate: 16000,
+        },
+      },
+      // Note: custom and webhook are configured at assistant level in dashboard, not per call
+    };
+
+    console.log("[server] Vapi API request body:", JSON.stringify(requestBody, null, 2));
+
+    const response = await axios.post(
+      `${VAPI_BASE_URL}/call`,
+      requestBody,
+      {
+        headers: {
+          Authorization: `Bearer ${VAPI_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    console.log("[server] Vapi API response status:", response.status);
+    console.log("[server] Vapi API response data:", JSON.stringify(response.data, null, 2));
+
+    // Vapi API response structure
+    const responseData = response.data;
+    const callId = responseData.id;
+    
+    // Vapi uses websocketCallUrl for transport (bidirectional WebSocket)
+    const transportUrl = responseData.transport?.websocketCallUrl;
+    
+    // For vapi.websocket, there's typically one WebSocket URL for bidirectional communication
+    // Use the transport URL for both transport and listen
+    const listenUrl = transportUrl;
+
+    if (!callId) {
+      console.error("[server] Missing callId in Vapi response");
+      return res.status(500).json({
+        error: "Invalid response from Vapi API",
+        details: "Missing callId",
+        response: responseData,
+      });
+    }
+
+    if (!transportUrl) {
+      console.error("[server] Missing transport URL in Vapi response");
+      console.error("[server] Full response structure:", Object.keys(responseData));
+      return res.status(500).json({
+        error: "Invalid response from Vapi API",
+        details: "Missing transportUrl",
+        response: responseData,
+      });
+    }
+
+    console.log("[server] Vapi call created:", callId);
+
+    res.json({
+      callId,
+      transportUrl,
+      listenUrl,
+    });
+  } catch (error) {
+    console.error(
+      "[server] Failed to create Vapi call:",
+      error.response?.data || error.message
+    );
+    res.status(500).json({
+      error: "Failed to create call",
+      details: error.response?.data || error.message,
+    });
+  }
 });
 
 app.get("/health", (req, res) => {

@@ -14,8 +14,7 @@ import { CommonActions } from "@react-navigation/native";
 import { useConversation } from "../context/ConversationContext";
 import { useAuth } from "../context/AuthContext";
 import { Audio } from "expo-av";
-import * as FileSystem from "expo-file-system/legacy";
-import { transcribeAudio } from "../services/api";
+import vapiCallManager from "../services/vapi";
 import { LinearGradient } from "expo-linear-gradient";
 import { colors, gradients, shadows } from "../theme/colors";
 import { ChatBubble } from "../components/ChatBubble";
@@ -24,16 +23,14 @@ const ChatScreen = ({ navigation }) => {
   const { conversationState, updateConversationState } = useConversation();
   const { user, logout } = useAuth();
   const messages = conversationState.messages || [];
-  const [isRecording, setIsRecording] = useState(false);
+  const [isCallActive, setIsCallActive] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [permissionGranted, setPermissionGranted] = useState(null);
   const [error, setError] = useState(null);
   const [transcript, setTranscript] = useState("");
-  const recordingRef = useRef(null);
-  const mediaRecorderRef = useRef(null);
-  const webStreamRef = useRef(null);
-  const webChunksRef = useRef([]);
+  const [vapiCallId, setVapiCallId] = useState(null);
   const [speakingMessageId, setSpeakingMessageId] = useState(null);
+  const vapiCallRef = useRef(null);
   const conversationIdRef = useRef(
     conversationState.conversationId || `conv-${Date.now()}`
   );
@@ -90,19 +87,58 @@ const ChatScreen = ({ navigation }) => {
     }
   }, [conversationState.conversationId, updateConversationState]);
 
+
   useEffect(() => {
-    log("Initializing microphone permissions for", Platform.OS);
+    recordShimmer.setValue(0);
+    const loop = Animated.loop(
+      Animated.timing(recordShimmer, {
+        toValue: 1,
+        duration: 6000,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      })
+    );
+    recordLoopRef.current = loop;
+    loop.start();
+
+    return () => {
+      recordLoopRef.current?.stop();
+      recordLoopRef.current = null;
+    };
+  }, [recordShimmer]);
+
+  useEffect(() => {
+    Animated.timing(recordIntensity, {
+      toValue: isCallActive ? 1 : 0,
+      duration: isCallActive ? 260 : 420,
+      easing: isCallActive ? Easing.out(Easing.cubic) : Easing.inOut(Easing.quad),
+      useNativeDriver: true,
+    }).start();
+  }, [isCallActive, recordIntensity]);
+
+  // Cleanup Vapi call on unmount
+  useEffect(() => {
+    return () => {
+      if (vapiCallRef.current) {
+        vapiCallManager.endCall().catch(console.error);
+      }
+    };
+  }, []);
+
+  // Permission check for microphone (still needed for Vapi)
+  useEffect(() => {
+    log("Checking microphone permissions for", Platform.OS);
 
     if (Platform.OS === "web") {
       if (
         !navigator?.mediaDevices?.getUserMedia ||
-        typeof window.MediaRecorder === "undefined"
+        typeof window.WebSocket === "undefined"
       ) {
         setPermissionGranted(false);
         setError(
-          "This browser does not support in-browser voice recording. Try a different browser or the mobile app."
+          "This browser does not support real-time voice calls. Try a different browser or the mobile app."
         );
-        log("MediaRecorder not supported in this browser");
+        log("WebSocket or getUserMedia not supported in this browser");
         return;
       }
 
@@ -133,342 +169,125 @@ const ChatScreen = ({ navigation }) => {
         log("Native microphone permission granted");
       }
     })();
-
-    return () => {
-      if (recordingRef.current) {
-        recordingRef.current
-          .stopAndUnloadAsync()
-          .then(() => log("Cleaned up native recording instance on unmount"))
-          .catch(() => undefined);
-      }
-      if (mediaRecorderRef.current) {
-        try {
-          mediaRecorderRef.current.stop();
-          log("Stopped active web recorder during cleanup");
-        } catch (err) {
-          // ignore
-        }
-      }
-      if (webStreamRef.current) {
-        webStreamRef.current.getTracks().forEach((track) => track.stop());
-        webStreamRef.current = null;
-        log("Closed web media stream during cleanup");
-      }
-    };
   }, []);
 
-  useEffect(() => {
-    recordShimmer.setValue(0);
-    const loop = Animated.loop(
-      Animated.timing(recordShimmer, {
-        toValue: 1,
-        duration: 6000,
-        easing: Easing.linear,
-        useNativeDriver: true,
-      })
-    );
-    recordLoopRef.current = loop;
-    loop.start();
 
-    return () => {
-      recordLoopRef.current?.stop();
-      recordLoopRef.current = null;
-    };
-  }, [recordShimmer]);
-
-  useEffect(() => {
-    Animated.timing(recordIntensity, {
-      toValue: isRecording ? 1 : 0,
-      duration: isRecording ? 260 : 420,
-      easing: isRecording ? Easing.out(Easing.cubic) : Easing.inOut(Easing.quad),
-      useNativeDriver: true,
-    }).start();
-  }, [isRecording, recordIntensity]);
-
-  const stopRecordingAsync = useCallback(async () => {
-    const recording = recordingRef.current;
-    if (!recording) {
-      log("stopRecordingAsync called but no recording instance found");
-      return null;
-    }
+  // Vapi call management
+  const startVapiCall = useCallback(async () => {
     try {
-      log("Stopping native recording…");
-      await recording.stopAndUnloadAsync();
-      const uri = recording.getURI();
-      recordingRef.current = null;
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: false,
-        playsInSilentModeIOS: true,
-      });
-      log("Native recording stopped. File saved at", uri);
-      return uri;
-    } catch (err) {
-      recordingRef.current = null;
-      log("Failed to stop recording", err);
-      return null;
-    }
-  }, []);
-
-  const stopWebRecordingAsync = useCallback(() => {
-    const recorder = mediaRecorderRef.current;
-    const stream = webStreamRef.current;
-    if (!recorder) {
-      log("stopWebRecordingAsync called with no active recorder");
-      return Promise.resolve(null);
-    }
-
-    return new Promise((resolve, reject) => {
-      recorder.onstop = () => {
-        try {
-          const blob = new Blob(webChunksRef.current, { type: "audio/webm" });
-          webChunksRef.current = [];
-          mediaRecorderRef.current = null;
-          if (stream) {
-            stream.getTracks().forEach((track) => track.stop());
-            webStreamRef.current = null;
-          }
-          const file = new File([blob], `recording-${Date.now()}.webm`, {
-            type: "audio/webm",
-          });
-          log("Web recording stopped. Blob assembled", {
-            size: blob.size,
-            type: blob.type,
-          });
-          resolve(file);
-        } catch (err) {
-          log("Failed to assemble web recording blob", err);
-          reject(err);
-        }
-      };
-
-      try {
-        log("Stopping web MediaRecorder…");
-        recorder.stop();
-      } catch (err) {
-        log("Stopping MediaRecorder failed", err);
-        reject(err);
-      }
-    });
-  }, []);
-
-  const startRecordingAsync = useCallback(async () => {
-    if (permissionGranted === false) {
-      setError("Microphone blocked. Enable access in settings.");
-      log("Attempted to start native recording without permission");
-      return;
-    }
-    setError(null);
-    try {
-      log("Configuring Audio mode for native recording…");
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-        staysActiveInBackground: false,
-        shouldDuckAndroid: true,
-        playThroughEarpieceAndroid: false,
-      });
-      log("Preparing recorder…");
-      const recording = new Audio.Recording();
-      await recording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
-      await recording.startAsync();
-      recordingRef.current = recording;
-      setIsRecording(true);
-      log("Native recording started");
-    } catch (err) {
-      console.error("Failed to start recording", err);
-      setError("Recording failed to start. Try again.");
-    }
-  }, [permissionGranted]);
-
-  const startWebRecordingAsync = useCallback(async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      webStreamRef.current = stream;
-      const recorder = new MediaRecorder(stream);
-      webChunksRef.current = [];
-      recorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          webChunksRef.current.push(event.data);
-        }
-      };
-      mediaRecorderRef.current = recorder;
-      recorder.start();
-      setIsRecording(true);
-      log("Web recording started");
-    } catch (err) {
-      console.error("Failed to start web recording", err);
-      setError("Could not start recording. Check your device permissions.");
-    }
-  }, []);
-
-  const handleTranscription = useCallback(
-    async ({ uri, file }) => {
-      if (!uri && !file) {
-        setIsProcessing(false);
-        setIsRecording(false);
-        log("handleTranscription called with no recording payload");
-        return;
-      }
+      setIsCallActive(true);
+      setError(null);
       setIsProcessing(true);
-      log("Submitting recording for transcription", uri ? { uri } : { file });
-      log("Using conversation ID:", conversationIdRef.current);
-      let transcriptText = "";
-      try {
-        const response = await transcribeAudio({
-          uri,
-          file,
-          conversationId: conversationIdRef.current,
-          userId: user?.uid,
-        });
-        transcriptText = response?.transcript ?? "";
-        if (!transcriptText) {
-          setError("No speech detected. Try again.");
+
+      // Set up event handlers
+      vapiCallManager.setOnTranscript((message) => {
+        console.log("[ChatScreen] Transcript:", message);
+        
+        // Add transcript to messages
+        if (message.role === "user" || message.role === "user-interim") {
+          const userMessage = {
+            id: `msg-${Date.now()}-${Math.random()}`,
+            sender: "Resident",
+            text: message.transcript || message.text || "",
+            timestamp: Date.now(),
+          };
+          
+          // Only add if it's a final transcript (not interim)
+          if (message.role === "user" && message.transcript) {
+            updateConversationState({
+              messages: [...messages, userMessage],
+            });
+          }
+        } else if (message.role === "assistant" || message.role === "assistant-interim") {
+          const aiMessage = {
+            id: `msg-${Date.now()}-${Math.random()}`,
+            sender: "Resi",
+            text: message.transcript || message.text || "",
+            timestamp: Date.now(),
+          };
+          
+          // Only add if it's a final transcript (not interim)
+          if (message.role === "assistant" && message.transcript) {
+            updateConversationState({
+              messages: [...messages, aiMessage],
+            });
+            setSpeakingMessageId(aiMessage.id);
+          }
+        }
+      });
+
+      vapiCallManager.setOnStatusUpdate((message) => {
+        console.log("[ChatScreen] Status update:", message);
+        if (message.call?.status === "ended") {
+          setIsCallActive(false);
           setIsProcessing(false);
-          setIsRecording(false);
-          log("Transcription returned empty text");
-          return;
+          // Ticket creation is handled by webhook
         }
-        setTranscript(transcriptText);
-        log("Transcription succeeded", { transcript: transcriptText });
-        if (response?.context) {
-          console.log("[Voice] Server conversation context", response.context);
-        }
+      });
 
-        const residentMessage = {
-          id: `msg-${messages.length + 1}`,
-          sender: "Resident",
-          text: transcriptText,
-          timestamp: Date.now(),
-        };
-        const aiMessage = {
-          id: `msg-${messages.length + 2}`,
-          sender: "Resi",
-          text: response?.reply || "Thanks! We'll get back to you soon.",
-          timestamp: Date.now(),
-        };
-        const newMessages = [...messages, residentMessage, aiMessage];
-        updateConversationState({ messages: newMessages });
-
-        // Server handles ticket creation via persistTicket() in server/index.js
-        // No need to create tickets on the frontend
-        if (response?.classification?.needs_more_info) {
-          log("Ticket NOT saved - more info needed from user");
-        } else if (response?.ticket) {
-          log("Ticket created by server:", response.ticket.id);
-        }
-
-        const activeMessageId = aiMessage.id;
-        if (response?.audio?.data) {
-          setSpeakingMessageId(activeMessageId);
-          const contentType = response.audio.contentType || "audio/mpeg";
-          const base64 = response.audio.data;
-          try {
-            if (Platform.OS === "web") {
-              log("Playing TTS audio on web");
-              const binary = atob(base64);
-              const len = binary.length;
-              const bytes = new Uint8Array(len);
-              for (let i = 0; i < len; i++) bytes[i] = binary.charCodeAt(i);
-              const blob = new Blob([bytes], { type: contentType });
-              const audioUrl = URL.createObjectURL(blob);
-              const audioEl = new window.Audio(audioUrl);
-              try {
-                await audioEl.play();
-                log("TTS audio playback started");
-              } catch (playErr) {
-                console.warn("Audio playback failed (web):", playErr);
-                setError("Audio playback failed. Try again or check your browser.");
-              }
-              audioEl.onended = () => {
-                URL.revokeObjectURL(audioUrl);
-                log("TTS audio playback completed");
-                setSpeakingMessageId(null);
-              };
-              audioEl.onerror = () => {
-                setSpeakingMessageId(null);
-              };
-            } else {
-              log("Playing TTS audio on native");
-              
-              // Set audio mode for playback
-              try {
-                await Audio.setAudioModeAsync({
-                  allowsRecordingIOS: false,
-                  playsInSilentModeIOS: true,
-                  staysActiveInBackground: false,
-                });
-                log("Audio mode set for TTS playback");
-              } catch (modeErr) {
-                log("Failed to set audio mode for playback:", modeErr);
-              }
-              
-              const filename = `resi-reply-${Date.now()}.mp3`;
-              const fileUri = FileSystem.cacheDirectory + filename;
-              await FileSystem.writeAsStringAsync(fileUri, base64, {
-                encoding: FileSystem.EncodingType.Base64,
-              });
-              log("TTS audio written to file:", fileUri);
-              
-              const { sound } = await Audio.Sound.createAsync(
-                { uri: fileUri },
-                { shouldPlay: true },
-                (status) => {
-                  log("TTS playback status:", status);
-                  if (status.didJustFinish) {
-                    log("TTS playback finished");
-                    sound.unloadAsync().catch((e) => log("Failed to unload:", e));
-                    // Clean up the temp audio file
-                    try {
-                      const file = FileSystem.getInfoAsync(fileUri);
-                      if (file && file.exists) {
-                        FileSystem.deleteAsync(fileUri).catch((e) => log("Failed to delete:", e));
-                      }
-                    } catch (e) {
-                      log("Failed to clean up audio file:", e);
-                    }
-                    setSpeakingMessageId(null);
-                  }
-                  if (status.error) {
-                    log("TTS playback error:", status.error);
-                    setSpeakingMessageId(null);
-                  }
-                }
-              );
-              log("TTS audio playback started on native");
-            }
-          } catch (playbackError) {
-            console.warn("Failed to play audio response", playbackError);
-            setError("Audio playback failed. Try again or check your device.");
-            setSpeakingMessageId(null);
-          }
-        } else {
-          log("No audio data returned from backend");
-          setSpeakingMessageId(null);
-        }
-      } catch (err) {
-        setError("Upload failed. Try again.");
-        console.error("Transcription failed", err);
-        setSpeakingMessageId(null);
-      } finally {
+      vapiCallManager.setOnError((error) => {
+        console.error("[ChatScreen] Vapi error:", error);
+        setError("Call failed. Please try again.");
+        setIsCallActive(false);
         setIsProcessing(false);
-        setIsRecording(false);
-        // Clean up temp recording file
-        if (uri && Platform.OS !== "web") {
-          try {
-            await FileSystem.deleteAsync(uri);
-          } catch (cleanupErr) {
-            log("Failed to delete temp recording", cleanupErr);
-          }
-        }
+      });
+
+      vapiCallManager.setOnEnd(() => {
+        console.log("[ChatScreen] Call ended");
+        setIsCallActive(false);
+        setIsProcessing(false);
+        setVapiCallId(null);
+        setSpeakingMessageId(null);
+        vapiCallRef.current = null;
+      });
+
+      // Get assistant ID from environment or use default
+      const assistantId = process.env.EXPO_PUBLIC_VAPI_ASSISTANT_ID || "";
+
+      if (!assistantId) {
+        throw new Error("VAPI_ASSISTANT_ID not configured");
       }
-    },
-    [messages, updateConversationState, user]
-  );
+
+      // Create call
+      const callData = await vapiCallManager.createCall(
+        assistantId,
+        user?.uid,
+        conversationIdRef.current
+      );
+
+      setVapiCallId(callData.callId);
+      vapiCallRef.current = callData;
+      setIsProcessing(false);
+
+      log("Vapi call started:", callData.callId);
+    } catch (error) {
+      console.error("[ChatScreen] Failed to start Vapi call:", error);
+      setError(error.message || "Failed to start call. Please try again.");
+      setIsCallActive(false);
+      setIsProcessing(false);
+    }
+  }, [messages, updateConversationState, user]);
+
+  const endVapiCall = useCallback(async () => {
+    try {
+      setIsProcessing(true);
+      await vapiCallManager.endCall();
+      setIsCallActive(false);
+      setVapiCallId(null);
+      vapiCallRef.current = null;
+      setIsProcessing(false);
+      log("Vapi call ended");
+    } catch (error) {
+      console.error("[ChatScreen] Failed to end call:", error);
+      setError("Failed to end call. Please try again.");
+      setIsProcessing(false);
+    }
+  }, []);
 
   const handleMicPress = useCallback(async () => {
     log("Mic button pressed", {
       isProcessing,
-      isRecording,
+      isCallActive,
       platform: Platform.OS,
     });
 
@@ -477,38 +296,14 @@ const ChatScreen = ({ navigation }) => {
       return;
     }
 
-    if (Platform.OS === "web") {
-      if (isRecording) {
-        setIsRecording(false);
-        try {
-          const file = await stopWebRecordingAsync();
-          await handleTranscription({ file });
-        } catch (err) {
-          console.error("Failed to stop web recording", err);
-          setError("Recording failed. Please try again.");
-        }
-      } else {
-        await startWebRecordingAsync();
-      }
-      return;
-    }
-
-    if (isRecording) {
-      setIsRecording(false);
-      const uri = await stopRecordingAsync();
-      await handleTranscription({ uri });
+    if (isCallActive) {
+      // End the call
+      await endVapiCall();
     } else {
-      await startRecordingAsync();
+      // Start the call
+      await startVapiCall();
     }
-  }, [
-    handleTranscription,
-    isProcessing,
-    isRecording,
-    startRecordingAsync,
-    startWebRecordingAsync,
-    stopRecordingAsync,
-    stopWebRecordingAsync,
-  ]);
+  }, [isCallActive, isProcessing, startVapiCall, endVapiCall]);
 
   const handleLogout = async () => {
     log("Signing out user from ChatScreen");
@@ -581,19 +376,28 @@ const ChatScreen = ({ navigation }) => {
               </Text>
             </View>
           ) : (
-            <FlatList
-              data={messages}
-              keyExtractor={(item) => item.id?.toString()}
-              renderItem={({ item }) => (
-                <ChatBubble
-                  {...item}
-                  isSpeaking={item.id === speakingMessageId}
-                />
+            <>
+              <FlatList
+                data={messages}
+                keyExtractor={(item) => item.id?.toString()}
+                renderItem={({ item }) => (
+                  <ChatBubble
+                    {...item}
+                    isSpeaking={item.id === speakingMessageId}
+                  />
+                )}
+                contentContainerStyle={styles.chatList}
+                ItemSeparatorComponent={() => <View style={{ height: 16 }} />}
+                showsVerticalScrollIndicator={false}
+              />
+              {isCallActive && (
+                <View style={styles.callStatus}>
+                  <Text style={styles.callStatusText}>
+                    🎤 Speaking with Resi...
+                  </Text>
+                </View>
               )}
-            contentContainerStyle={styles.chatList}
-            ItemSeparatorComponent={() => <View style={{ height: 16 }} />}
-              showsVerticalScrollIndicator={false}
-            />
+            </>
           )}
         </View>
 
@@ -604,7 +408,7 @@ const ChatScreen = ({ navigation }) => {
               accessibilityLabel="Start voice recording"
               style={[
                 styles.recordButton,
-                isRecording && styles.recordButtonActive,
+                isCallActive && styles.recordButtonActive,
                 isProcessing && { opacity: 0.7 },
               ]}
               onPress={handleMicPress}
@@ -628,7 +432,7 @@ const ChatScreen = ({ navigation }) => {
                 ]}
               />
               <Text style={styles.recordButtonText}>
-                {isRecording ? "Stop & Submit" : "Start Voice Report"}
+                {isCallActive ? "End Call" : "Start Voice Report"}
               </Text>
             </TouchableOpacity>
             <Animated.View
@@ -816,6 +620,18 @@ const styles = StyleSheet.create({
   errorText: {
     color: colors.danger,
     textAlign: "center",
+  },
+  callStatus: {
+    padding: 16,
+    backgroundColor: "rgba(139, 92, 246, 0.1)",
+    borderRadius: 12,
+    marginTop: 12,
+  },
+  callStatusText: {
+    color: colors.primary,
+    fontWeight: "600",
+    textAlign: "center",
+    fontSize: 14,
   },
 });
 

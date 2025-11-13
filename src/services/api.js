@@ -5,37 +5,47 @@ import Constants from "expo-constants";
 
 const getDefaultApiUrl = () => {
   // For production mobile apps, always use the deployed server
-  const PRODUCTION_API = "https://movemate-39ed.onrender.com";
-  
+  const PRODUCTION_API = "https://resi-7125.onrender.com";
+
   // Toggle this for local development
   const USE_LOCAL_SERVER = false; // Set to false for production
-  
+
   if (USE_LOCAL_SERVER) {
     // Local development mode
-    if (Platform.OS === 'ios') {
+    if (Platform.OS === "ios") {
       // For physical iOS devices, use the Expo debugger host IP
       // For simulator, use localhost
-      const debuggerHost = Constants.expoConfig?.hostUri?.split(':').shift();
-      console.log('[API] iOS debuggerHost detected:', debuggerHost);
-      console.log('[API] Constants.expoConfig?.hostUri:', Constants.expoConfig?.hostUri);
-      console.log('[API] Constants.manifest?.debuggerHost:', Constants.manifest?.debuggerHost);
-      
-      if (debuggerHost && debuggerHost !== 'localhost') {
+      const debuggerHost = Constants.expoConfig?.hostUri?.split(":").shift();
+      console.log("[API] iOS debuggerHost detected:", debuggerHost);
+      console.log(
+        "[API] Constants.expoConfig?.hostUri:",
+        Constants.expoConfig?.hostUri
+      );
+      console.log(
+        "[API] Constants.manifest?.debuggerHost:",
+        Constants.manifest?.debuggerHost
+      );
+
+      if (debuggerHost && debuggerHost !== "localhost") {
         // Physical device - use the Mac's IP address
         const url = `http://${debuggerHost}:3000`;
-        console.log('[API] Using physical device URL:', url);
+        console.log("[API] Using physical device URL:", url);
         return url;
       }
       // Simulator - use localhost
-      console.log('[API] Using simulator URL: http://localhost:3000');
+      console.log("[API] Using simulator URL: http://localhost:3000");
       return "http://localhost:3000";
     }
-    if (Platform.OS === 'android') {
+    if (Platform.OS === "android") {
       // Android emulator uses 10.0.2.2 to reach host machine
-      const debuggerHost = Constants.expoConfig?.hostUri?.split(':').shift();
-      console.log('[API] Android debuggerHost detected:', debuggerHost);
-      
-      if (debuggerHost && debuggerHost !== 'localhost' && debuggerHost !== '10.0.2.2') {
+      const debuggerHost = Constants.expoConfig?.hostUri?.split(":").shift();
+      console.log("[API] Android debuggerHost detected:", debuggerHost);
+
+      if (
+        debuggerHost &&
+        debuggerHost !== "localhost" &&
+        debuggerHost !== "10.0.2.2"
+      ) {
         // Physical device - use the actual IP
         return `http://${debuggerHost}:3000`;
       }
@@ -43,14 +53,18 @@ const getDefaultApiUrl = () => {
     }
   } else {
     // Production mode - use deployed server
-    if (Platform.OS === 'ios' || Platform.OS === 'android') {
+    if (Platform.OS === "ios" || Platform.OS === "android") {
       return PRODUCTION_API;
     }
   }
-  
-  if (Platform.OS === 'web') {
+
+  if (Platform.OS === "web") {
     try {
-      if (typeof window !== "undefined" && window.location && window.location.origin) {
+      if (
+        typeof window !== "undefined" &&
+        window.location &&
+        window.location.origin
+      ) {
         // For web, use the same origin (Render serves both frontend and backend)
         return window.location.origin;
       }
@@ -58,7 +72,7 @@ const getDefaultApiUrl = () => {
       console.warn("[API] Error accessing window.location:", e);
     }
   }
-  
+
   return USE_LOCAL_SERVER ? "http://localhost:3000" : PRODUCTION_API;
 };
 
@@ -69,12 +83,20 @@ const DEFAULT_API_URL = getDefaultApiUrl();
 // ignore it and use the auto-detected IP instead
 let API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || DEFAULT_API_URL;
 
-if (API_BASE_URL.includes('localhost') && (Platform.OS === 'ios' || Platform.OS === 'android')) {
-  const debuggerHost = Constants.expoConfig?.hostUri?.split(':').shift();
-  if (debuggerHost && debuggerHost !== 'localhost') {
+if (
+  API_BASE_URL.includes("localhost") &&
+  (Platform.OS === "ios" || Platform.OS === "android")
+) {
+  const debuggerHost = Constants.expoConfig?.hostUri?.split(":").shift();
+  if (debuggerHost && debuggerHost !== "localhost") {
     // Physical device detected - use auto-detected IP instead of localhost
-    console.log('[API] EXPO_PUBLIC_API_BASE_URL points to localhost. Physical devices cannot reach this address.');
-    console.log('[API] Using auto-detected device URL instead:', DEFAULT_API_URL);
+    console.log(
+      "[API] EXPO_PUBLIC_API_BASE_URL points to localhost. Physical devices cannot reach this address."
+    );
+    console.log(
+      "[API] Using auto-detected device URL instead:",
+      DEFAULT_API_URL
+    );
     API_BASE_URL = DEFAULT_API_URL;
   }
 }
@@ -129,7 +151,7 @@ export const transcribeAudio = async ({
 
   // Add conversation ID to track context
   formData.append("conversationId", conversationId || `conv-${Date.now()}`);
-  
+
   // Add user ID to identify ticket owner
   if (userId) {
     formData.append("userId", userId);
@@ -152,11 +174,15 @@ export const transcribeAudio = async ({
   );
 
   try {
-    const response = await axios.post(`${API_BASE_URL}/api/processInput`, formData, {
-      headers: { "Content-Type": "multipart/form-data" },
-      onUploadProgress,
-      timeout: 60000, // 60 seconds for OpenAI Whisper + GPT processing
-    });
+    const response = await axios.post(
+      `${API_BASE_URL}/api/processInput`,
+      formData,
+      {
+        headers: { "Content-Type": "multipart/form-data" },
+        onUploadProgress,
+        timeout: 60000, // 60 seconds for OpenAI Whisper + GPT processing
+      }
+    );
 
     console.log("[API] Transcription response received", {
       status: response.status,
