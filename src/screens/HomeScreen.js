@@ -28,6 +28,16 @@ import { useAuth } from "../context/AuthContext";
 import { getFirebaseDatabase } from "../services/firebase";
 import { ref, push, onValue } from "firebase/database";
 import { transcribeAudio, pingServer } from "../services/api";
+import {
+  getDefaultWeek,
+  getPreviousWeek,
+  getNextWeek,
+  formatWeekRange,
+  getClosedTicketsForWeek,
+} from "../utils/weekUtils";
+
+const urgencyOrder = ["HIGH", "MEDIUM", "LOW", "UNKNOWN"];
+
 // Home screen component for resident users
 
 const HomeScreen = ({ navigation }) => {
@@ -39,6 +49,8 @@ const HomeScreen = ({ navigation }) => {
   const [error, setError] = useState(null);
   const [tickets, setTickets] = useState([]);
   const [loadingTickets, setLoadingTickets] = useState(true);
+  const [viewMode, setViewMode] = useState("queue"); // "queue" or "calendar"
+  const [selectedWeek, setSelectedWeek] = useState(getDefaultWeek());
   const recordingRef = useRef(null);
   const mediaRecorderRef = useRef(null);
   const webStreamRef = useRef(null);
@@ -118,6 +130,11 @@ const HomeScreen = ({ navigation }) => {
                 ticket.timestamp
             ) || null;
 
+          const closedAt =
+            parseDateValue(
+              ticket.closedAt || ticket.closed_at
+            ) || null;
+
           // Determine team: use ticket.team if available, otherwise infer from category
           const category = ticket.category || "Maintenance";
           let team = ticket.team;
@@ -134,6 +151,7 @@ const HomeScreen = ({ navigation }) => {
               ticket.summary || ticket.transcript || "No issue reported.",
             location: ticket.location || "Unknown",
             reportedAt,
+            closedAt,
             queuePosition:
               ticket.queuePosition ?? ticket.queue_position ?? null,
             category,
@@ -146,12 +164,7 @@ const HomeScreen = ({ navigation }) => {
         let userTickets = Object.entries(data)
           .filter(([, ticket]) => ticket.owner === user.uid)
           .map(normalizeTicket);
-        // Sort tickets by createdAt descending (latest first)
-        userTickets = userTickets.sort(
-          (a, b) =>
-            (b.reportedAt ? new Date(b.reportedAt).getTime() : 0) -
-            (a.reportedAt ? new Date(a.reportedAt).getTime() : 0)
-        );
+        
         console.log("[HomeScreen] Updated tickets:", {
           count: userTickets.length,
           queuePositions: userTickets.map((t) => ({
@@ -608,6 +621,58 @@ const HomeScreen = ({ navigation }) => {
     );
   };
 
+  // Separate open and closed tickets
+  const { openTickets, closedTickets } = useMemo(() => {
+    const open = tickets.filter((ticket) => ticket.status !== "closed");
+    const closed = tickets.filter((ticket) => ticket.status === "closed");
+    return { openTickets: open, closedTickets: closed };
+  }, [tickets]);
+
+  // Queue view: sorted open tickets by urgency
+  const sortedOpenTickets = useMemo(() => {
+    const getUrgencyIndex = (ticket) => {
+      const idx = urgencyOrder.indexOf(ticket.urgency?.toUpperCase());
+      return idx === -1 ? urgencyOrder.length : idx;
+    };
+
+    const getReportedAtMs = (ticket) => {
+      if (!ticket.reportedAt) {
+        return Number.MAX_SAFE_INTEGER;
+      }
+      const value = new Date(ticket.reportedAt).getTime();
+      return Number.isNaN(value) ? Number.MAX_SAFE_INTEGER : value;
+    };
+
+    return [...openTickets].sort((a, b) => {
+      const urgencyDiff = getUrgencyIndex(a) - getUrgencyIndex(b);
+      if (urgencyDiff !== 0) {
+        return urgencyDiff;
+      }
+      return getReportedAtMs(a) - getReportedAtMs(b);
+    });
+  }, [openTickets]);
+
+  // Calendar view: closed tickets for selected week, sorted by closed date
+  const sortedWeekClosedTickets = useMemo(() => {
+    const weekTickets = getClosedTicketsForWeek(closedTickets, selectedWeek);
+    
+    return [...weekTickets].sort((a, b) => {
+      const aClosed = a.closedAt ? new Date(a.closedAt).getTime() : 0;
+      const bClosed = b.closedAt ? new Date(b.closedAt).getTime() : 0;
+      return bClosed - aClosed; // Most recent first
+    });
+  }, [closedTickets, selectedWeek]);
+
+  const handlePreviousWeek = useCallback(() => {
+    setSelectedWeek(getPreviousWeek(selectedWeek));
+  }, [selectedWeek]);
+
+  const handleNextWeek = useCallback(() => {
+    setSelectedWeek(getNextWeek(selectedWeek));
+  }, [selectedWeek]);
+
+  const displayTickets = viewMode === "queue" ? sortedOpenTickets : sortedWeekClosedTickets;
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar style="dark" />
@@ -638,8 +703,88 @@ const HomeScreen = ({ navigation }) => {
           </Text>
         ) : tickets.length > 0 ? (
           <>
+            {/* View Mode Toggle */}
+            <View style={styles.viewModeCard}>
+              <Text style={styles.viewModeLabel}>View</Text>
+              <View style={styles.viewModeButtons}>
+                <TouchableOpacity
+                  style={[
+                    styles.viewModeButton,
+                    viewMode === "queue" && styles.viewModeButtonActive,
+                  ]}
+                  onPress={() => setViewMode("queue")}
+                >
+                  <Text
+                    style={[
+                      styles.viewModeButtonText,
+                      viewMode === "queue" && styles.viewModeButtonTextActive,
+                    ]}
+                  >
+                    Queue
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.viewModeButton,
+                    viewMode === "calendar" && styles.viewModeButtonActive,
+                  ]}
+                  onPress={() => setViewMode("calendar")}
+                >
+                  <Text
+                    style={[
+                      styles.viewModeButtonText,
+                      viewMode === "calendar" && styles.viewModeButtonTextActive,
+                    ]}
+                  >
+                    Calendar
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Week Navigation (only in Calendar view) */}
+            {viewMode === "calendar" && (
+              <View style={styles.weekNavigationCard}>
+                <TouchableOpacity
+                  style={styles.weekNavButton}
+                  onPress={handlePreviousWeek}
+                >
+                  <Text style={styles.weekNavButtonText}>← Previous</Text>
+                </TouchableOpacity>
+                <View style={styles.weekNavCenter}>
+                  <Text style={styles.weekNavLabel}>Week of</Text>
+                  <Text style={styles.weekNavDate}>
+                    {formatWeekRange(selectedWeek)}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.weekNavButton}
+                  onPress={handleNextWeek}
+                >
+                  <Text style={styles.weekNavButtonText}>Next →</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* Empty state messages */}
+            {viewMode === "queue" && displayTickets.length === 0 && (
+              <View style={styles.emptyState}>
+                <Text style={styles.emptyStateText}>
+                  No open tickets
+                </Text>
+              </View>
+            )}
+
+            {viewMode === "calendar" && displayTickets.length === 0 && (
+              <View style={styles.emptyState}>
+                <Text style={styles.emptyStateText}>
+                  No closed tickets for this week
+                </Text>
+              </View>
+            )}
+
             <FlatList
-              data={tickets}
+              data={displayTickets}
               keyExtractor={(item) => item.id}
               renderItem={({ item }) => {
                 // Debug logging
@@ -903,5 +1048,96 @@ const styles = StyleSheet.create({
   },
   footer: {
     marginBottom: 24,
+  },
+  viewModeCard: {
+    backgroundColor: colors.card,
+    borderRadius: 22,
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderWidth: 1,
+    borderColor: "rgba(99,102,241,0.12)",
+    marginBottom: 16,
+    ...shadows.card,
+  },
+  viewModeLabel: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: colors.text,
+    marginBottom: 12,
+  },
+  viewModeButtons: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  viewModeButton: {
+    flex: 1,
+    borderRadius: 999,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderWidth: 0,
+    backgroundColor: colors.surfaceMuted,
+    alignItems: "center",
+  },
+  viewModeButtonActive: {
+    backgroundColor: "rgba(127,92,255,0.24)",
+  },
+  viewModeButtonText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: colors.muted,
+  },
+  viewModeButtonTextActive: {
+    color: colors.primary,
+  },
+  weekNavigationCard: {
+    backgroundColor: colors.card,
+    borderRadius: 22,
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderWidth: 1,
+    borderColor: "rgba(99,102,241,0.12)",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 16,
+    ...shadows.card,
+  },
+  weekNavButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 999,
+    backgroundColor: colors.surfaceMuted,
+  },
+  weekNavButtonText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: colors.text,
+  },
+  weekNavCenter: {
+    flex: 1,
+    alignItems: "center",
+    marginHorizontal: 16,
+  },
+  weekNavLabel: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: colors.muted,
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+    marginBottom: 4,
+  },
+  weekNavDate: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: colors.text,
+  },
+  emptyState: {
+    padding: 32,
+    alignItems: "center",
+  },
+  emptyStateText: {
+    fontSize: 14,
+    color: colors.muted,
+    textAlign: "center",
   },
 });

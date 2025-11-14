@@ -19,14 +19,22 @@ import {
   updateIssueStatus,
   useIssues,
 } from "../services/issueService";
+import {
+  getDefaultWeek,
+  getPreviousWeek,
+  getNextWeek,
+  formatWeekRange,
+  getClosedTicketsForWeek,
+} from "../utils/weekUtils";
 
 const urgencyOrder = ["HIGH", "MEDIUM", "LOW", "UNKNOWN"];
-const CLOSED_HIDE_DELAY_MS = 7000;
 
 const DashboardScreen = ({ navigation }) => {
   console.log("[Dashboard] Component mounted/rendered");
+  const [viewMode, setViewMode] = useState("queue"); // "queue" or "calendar"
   const [filterUrgency, setFilterUrgency] = useState("ALL");
   const [nowTick, setNowTick] = useState(Date.now());
+  const [selectedWeek, setSelectedWeek] = useState(getDefaultWeek());
   const { logout, role } = useAuth();
   const issuesData = useIssues();
   console.log("[Dashboard] issuesData loaded, count:", issuesData.length);
@@ -48,22 +56,15 @@ const DashboardScreen = ({ navigation }) => {
     return issuesData;
   }, [issuesData, role]);
 
-  const { sortedIssues, filteredIssues } = useMemo(() => {
-    const now = nowTick;
-    const visibleIssues = issuesForRole.filter((issue) => {
-      if (issue.status !== "closed") {
-        return true;
-      }
-      if (!issue.closedAt) {
-        return true;
-      }
-      const closedMs = new Date(issue.closedAt).getTime();
-      if (Number.isNaN(closedMs)) {
-        return true;
-      }
-      return now - closedMs < CLOSED_HIDE_DELAY_MS;
-    });
+  // Separate open and closed issues
+  const { openIssues, closedIssues } = useMemo(() => {
+    const open = issuesForRole.filter((issue) => issue.status !== "closed");
+    const closed = issuesForRole.filter((issue) => issue.status === "closed");
+    return { openIssues: open, closedIssues: closed };
+  }, [issuesForRole]);
 
+  // Queue view: sorted open issues by urgency
+  const { sortedOpenIssues, filteredOpenIssues } = useMemo(() => {
     const getUrgencyIndex = (issue) => {
       const idx = urgencyOrder.indexOf(issue.urgency);
       return idx === -1 ? urgencyOrder.length : idx;
@@ -77,7 +78,7 @@ const DashboardScreen = ({ navigation }) => {
       return Number.isNaN(value) ? Number.MAX_SAFE_INTEGER : value;
     };
 
-    const sorted = [...visibleIssues].sort((a, b) => {
+    const sorted = [...openIssues].sort((a, b) => {
       const urgencyDiff = getUrgencyIndex(a) - getUrgencyIndex(b);
       if (urgencyDiff !== 0) {
         return urgencyDiff;
@@ -90,20 +91,33 @@ const DashboardScreen = ({ navigation }) => {
         ? sorted
         : sorted.filter((issue) => issue.urgency === filterUrgency);
 
-    return { sortedIssues: sorted, filteredIssues: filteredList };
-  }, [filterUrgency, issuesForRole, nowTick]);
+    return { sortedOpenIssues: sorted, filteredOpenIssues: filteredList };
+  }, [filterUrgency, openIssues]);
+
+  // Calendar view: closed issues for selected week, sorted by closed date
+  const { weekClosedIssues, sortedWeekClosedIssues } = useMemo(() => {
+    const weekTickets = getClosedTicketsForWeek(closedIssues, selectedWeek);
+    
+    const sorted = [...weekTickets].sort((a, b) => {
+      const aClosed = a.closedAt ? new Date(a.closedAt).getTime() : 0;
+      const bClosed = b.closedAt ? new Date(b.closedAt).getTime() : 0;
+      return bClosed - aClosed; // Most recent first
+    });
+
+    return { weekClosedIssues: weekTickets, sortedWeekClosedIssues: sorted };
+  }, [closedIssues, selectedWeek]);
 
   useEffect(() => {
-    console.log("[Dashboard] sortedIssues changed, count:", sortedIssues.length);
-    if (!sortedIssues.length) {
+    console.log("[Dashboard] sortedOpenIssues changed, count:", sortedOpenIssues.length);
+    if (!sortedOpenIssues.length) {
       console.log("[Dashboard] No issues to sync");
       return;
     }
 
     const syncPositions = async () => {
       const updates = [];
-      console.log("[Dashboard] Checking queue positions for", sortedIssues.length, "issues");
-      sortedIssues.forEach((issue, index) => {
+      console.log("[Dashboard] Checking queue positions for", sortedOpenIssues.length, "issues");
+      sortedOpenIssues.forEach((issue, index) => {
         const expectedPosition = index + 1;
         console.log("[Dashboard] Issue queue check:", {
           id: issue.id.substring(0, 10),
@@ -140,7 +154,7 @@ const DashboardScreen = ({ navigation }) => {
     };
 
     syncPositions();
-  }, [sortedIssues]);
+  }, [sortedOpenIssues]);
 
   const handleLogout = useCallback(async () => {
     console.log("[Dashboard] Signing out user");
@@ -164,6 +178,16 @@ const DashboardScreen = ({ navigation }) => {
       );
     }
   }, []);
+
+  const handlePreviousWeek = useCallback(() => {
+    setSelectedWeek(getPreviousWeek(selectedWeek));
+  }, [selectedWeek]);
+
+  const handleNextWeek = useCallback(() => {
+    setSelectedWeek(getNextWeek(selectedWeek));
+  }, [selectedWeek]);
+
+  const displayIssues = viewMode === "queue" ? filteredOpenIssues : sortedWeekClosedIssues;
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -199,7 +223,7 @@ const DashboardScreen = ({ navigation }) => {
           <View style={styles.metricCard}>
             <Text style={styles.metricLabel}>Open tickets</Text>
             <Text style={styles.metricValue}>
-              {sortedIssues.filter((issue) => issue.status !== "closed").length}
+              {openIssues.length}
             </Text>
             <Text style={styles.metricHint}>
               Updated {new Date(nowTick).toLocaleTimeString()}
@@ -220,37 +244,120 @@ const DashboardScreen = ({ navigation }) => {
           </View>
         </View>
 
-        <View style={styles.filtersCard}>
-          <Text style={styles.filtersLabel}>Filter by urgency</Text>
-          <View style={styles.filters}>
-            {["ALL", "HIGH", "MEDIUM", "LOW"].map((level) => {
-              const isActive = filterUrgency === level;
-              return (
-                <TouchableOpacity
-                  key={level}
-                  style={[styles.filterChip, isActive && styles.filterChipActive]}
-                  onPress={() => setFilterUrgency(level)}
-                >
-                  <Text
-                    style={[styles.filterText, isActive && styles.filterTextActive]}
-                  >
-                    {level}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
+        {/* View Mode Toggle */}
+        <View style={styles.viewModeCard}>
+          <Text style={styles.viewModeLabel}>View</Text>
+          <View style={styles.viewModeButtons}>
+            <TouchableOpacity
+              style={[
+                styles.viewModeButton,
+                viewMode === "queue" && styles.viewModeButtonActive,
+              ]}
+              onPress={() => setViewMode("queue")}
+            >
+              <Text
+                style={[
+                  styles.viewModeButtonText,
+                  viewMode === "queue" && styles.viewModeButtonTextActive,
+                ]}
+              >
+                Queue
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.viewModeButton,
+                viewMode === "calendar" && styles.viewModeButtonActive,
+              ]}
+              onPress={() => setViewMode("calendar")}
+            >
+              <Text
+                style={[
+                  styles.viewModeButtonText,
+                  viewMode === "calendar" && styles.viewModeButtonTextActive,
+                ]}
+              >
+                Calendar
+              </Text>
+            </TouchableOpacity>
           </View>
         </View>
 
+        {/* Week Navigation (only in Calendar view) */}
+        {viewMode === "calendar" && (
+          <View style={styles.weekNavigationCard}>
+            <TouchableOpacity
+              style={styles.weekNavButton}
+              onPress={handlePreviousWeek}
+            >
+              <Text style={styles.weekNavButtonText}>← Previous</Text>
+            </TouchableOpacity>
+            <View style={styles.weekNavCenter}>
+              <Text style={styles.weekNavLabel}>Week of</Text>
+              <Text style={styles.weekNavDate}>
+                {formatWeekRange(selectedWeek)}
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={styles.weekNavButton}
+              onPress={handleNextWeek}
+            >
+              <Text style={styles.weekNavButtonText}>Next →</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Urgency Filter (only in Queue view) */}
+        {viewMode === "queue" && (
+          <View style={styles.filtersCard}>
+            <Text style={styles.filtersLabel}>Filter by urgency</Text>
+            <View style={styles.filters}>
+              {["ALL", "HIGH", "MEDIUM", "LOW"].map((level) => {
+                const isActive = filterUrgency === level;
+                return (
+                  <TouchableOpacity
+                    key={level}
+                    style={[styles.filterChip, isActive && styles.filterChipActive]}
+                    onPress={() => setFilterUrgency(level)}
+                  >
+                    <Text
+                      style={[styles.filterText, isActive && styles.filterTextActive]}
+                    >
+                      {level}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+        )}
+
+        {/* Empty state messages */}
+        {viewMode === "queue" && displayIssues.length === 0 && (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyStateText}>
+              No open tickets {filterUrgency !== "ALL" ? `with ${filterUrgency} urgency` : ""}
+            </Text>
+          </View>
+        )}
+
+        {viewMode === "calendar" && displayIssues.length === 0 && (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyStateText}>
+              No closed tickets for this week
+            </Text>
+          </View>
+        )}
+
         <FlatList
-          data={filteredIssues}
+          data={displayIssues}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.listContent}
           ItemSeparatorComponent={() => <View style={{ height: 16 }} />}
           renderItem={({ item, index }) => (
             <IssueCard
               issue={item}
-              position={index + 1}
+              position={viewMode === "queue" ? index + 1 : null}
               onStatusChange={(status) => handleStatusChange(item.id, status)}
             />
           )}
@@ -399,5 +506,94 @@ const styles = StyleSheet.create({
   listContent: {
     paddingBottom: 72,
     paddingTop: 6,
+  },
+  viewModeCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 22,
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderWidth: 1,
+    borderColor: "rgba(127,92,255,0.18)",
+    ...shadows.card,
+  },
+  viewModeLabel: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: colors.text,
+    marginBottom: 12,
+  },
+  viewModeButtons: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  viewModeButton: {
+    flex: 1,
+    borderRadius: 999,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderWidth: 0,
+    backgroundColor: colors.surfaceMuted,
+    alignItems: "center",
+  },
+  viewModeButtonActive: {
+    backgroundColor: "rgba(127,92,255,0.24)",
+  },
+  viewModeButtonText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: colors.muted,
+  },
+  viewModeButtonTextActive: {
+    color: colors.primary,
+  },
+  weekNavigationCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 22,
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderWidth: 1,
+    borderColor: "rgba(127,92,255,0.18)",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    ...shadows.card,
+  },
+  weekNavButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 999,
+    backgroundColor: colors.surfaceMuted,
+  },
+  weekNavButtonText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: colors.text,
+  },
+  weekNavCenter: {
+    flex: 1,
+    alignItems: "center",
+    marginHorizontal: 16,
+  },
+  weekNavLabel: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: colors.muted,
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+    marginBottom: 4,
+  },
+  weekNavDate: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: colors.text,
+  },
+  emptyState: {
+    padding: 32,
+    alignItems: "center",
+  },
+  emptyStateText: {
+    fontSize: 14,
+    color: colors.muted,
+    textAlign: "center",
   },
 });
